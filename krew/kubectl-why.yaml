@@ -1,0 +1,65 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: why
+spec:
+  version: v0.1.0   # updated by goreleaser / release automation
+  homepage: https://github.com/lakshmipriya-rs/kubectl-why
+  shortDescription: Diagnose a failing pod and print a root-cause report
+  description: |
+    kubectl-why collects pod spec/status, events, and logs for a single failing
+    pod, runs deterministic rule detectors (ImagePullBackOff, OOMKilled,
+    FailedScheduling, …), optionally consults a local or hosted LLM, and prints
+    a structured root-cause report.
+
+    It is strictly read-only and never modifies the cluster.
+
+    Examples:
+      # Diagnose a pod in the default namespace
+      kubectl why mypod
+
+      # Diagnose in another namespace, rules-only (no LLM)
+      kubectl why mypod -n production --no-llm
+
+      # JSON output for scripting
+      kubectl why mypod --output json
+  platforms:
+    - selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+      uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.1.0/kubectl-why_0.1.0_linux_amd64.tar.gz
+      sha256: "PLACEHOLDER_SHA256_linux_amd64"
+      bin: kubectl-why
+
+    - selector:
+        matchLabels:
+          os: linux
+          arch: arm64
+      uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.1.0/kubectl-why_0.1.0_linux_arm64.tar.gz
+      sha256: "PLACEHOLDER_SHA256_linux_arm64"
+      bin: kubectl-why
+
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+      uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.1.0/kubectl-why_0.1.0_darwin_amd64.tar.gz
+      sha256: "PLACEHOLDER_SHA256_darwin_amd64"
+      bin: kubectl-why
+
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+      uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.1.0/kubectl-why_0.1.0_darwin_arm64.tar.gz
+      sha256: "PLACEHOLDER_SHA256_darwin_arm64"
+      bin: kubectl-why
+
+    - selector:
+        matchLabels:
+          os: windows
+          arch: amd64
+      uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.1.0/kubectl-why_0.1.0_windows_amd64.zip
+      sha256: "PLACEHOLDER_SHA256_windows_amd64"
+      bin: kubectl-why.exe

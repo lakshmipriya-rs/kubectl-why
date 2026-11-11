@@ -1,0 +1,23 @@
+---
+# Scenario 03: FailedScheduling – requesting 1000 CPU cores
+# No real cluster has 1000 cores on a single node.
+# kubectl-why should detect FailedScheduling and report insufficient CPU.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unschedulable-pod
+  namespace: default
+  labels:
+    scenario: unschedulable
+spec:
+  restartPolicy: Never
+  containers:
+    - name: app
+      image: nginx:stable
+      resources:
+        requests:
+          cpu: "1000"      # 1000 cores – impossible on any real node
+          memory: "64Mi"
+        limits:
+          cpu: "1000"
+          memory: "128Mi"

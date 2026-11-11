@@ -1,0 +1,31 @@
+---
+# Scenario 01: ImagePullBackOff
+# The image tag "doesnotexist999" does not exist on Docker Hub.
+# kubectl-why should detect ImagePullBackOff and suggest correcting the tag.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-image
+  namespace: default
+  labels:
+    app: bad-image
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bad-image
+  template:
+    metadata:
+      labels:
+        app: bad-image
+    spec:
+      containers:
+        - name: app
+          image: nginx:doesnotexist999
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"

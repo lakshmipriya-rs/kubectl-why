@@ -1,0 +1,17 @@
+{
+  "scenario": "03-unschedulable",
+  "description": "Pod requests 1000 CPU cores; no node can satisfy the request",
+  "expected_category": "FailedScheduling",
+  "fix_keywords": ["cpu", "request", "1000", "node", "insufficient"],
+  "must_not_hallucinate": [
+    "OOMKilled",
+    "ImagePullBackOff",
+    "CrashLoopBackOff",
+    "bad image",
+    "memory limit"
+  ],
+  "wait_for": {
+    "pod_phase": "Pending",
+    "event_reason": "FailedScheduling"
+  }
+}

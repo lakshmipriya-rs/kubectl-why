@@ -2,7 +2,7 @@
 
 > Diagnose a single failing Kubernetes pod and print a root-cause report.
 
-[![CI](https://github.com/assetworks/kubectl-why/actions/workflows/ci.yml/badge.svg)](https://github.com/assetworks/kubectl-why/actions/workflows/ci.yml)
+[![CI](https://github.com/lakshmipriya-rs/kubectl-why/actions/workflows/ci.yml/badge.svg)](https://github.com/lakshmipriya-rs/kubectl-why/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -44,12 +44,12 @@ kubectl krew install why
 ### Go install
 
 ```bash
-go install github.com/assetworks/kubectl-why@latest
+go install github.com/lakshmipriya-rs/kubectl-why@latest
 ```
 
 ### Pre-built binary
 
-Download from [Releases](https://github.com/assetworks/kubectl-why/releases).
+Download from [Releases](https://github.com/lakshmipriya-rs/kubectl-why/releases).
 
 ---
 
@@ -207,4 +207,4 @@ PRs welcome. Please run `go test ./...` and `go vet ./...` before opening a PR.
 
 ## License
 
-[MIT](LICENSE) © AssetWorks Fleet
+[MIT](LICENSE) © Lakshmipriya
