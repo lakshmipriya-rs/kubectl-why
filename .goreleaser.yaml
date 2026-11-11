@@ -55,7 +55,7 @@ changelog:
 
 release:
   github:
-    owner: Lakshmipriya
+    owner: lakshmipriya-rs
     name: kubectl-why
   draft: false
   prerelease: auto
