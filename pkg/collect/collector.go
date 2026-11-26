@@ -79,8 +79,9 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 		}
 	}
 
-	// ── Node conditions (Pending pods only) ───────────────────────────────────
-	if pod.Status.Phase == corev1.PodPending && pod.Spec.NodeName != "" {
+	// ── Node conditions (only once the pod is assigned to a node) ─────────────
+	// Unscheduled pods have no node; their FailedScheduling events explain why.
+	if pod.Spec.NodeName != "" {
 		node, err := c.client.CoreV1().Nodes().Get(ctx, pod.Spec.NodeName, metav1.GetOptions{})
 		if err == nil {
 			facts.NodeConditions = node.Status.Conditions

@@ -4,15 +4,16 @@ package rules
 
 // Category names for deterministic findings.
 const (
-	CategoryImagePullBackOff  = "ImagePullBackOff"
-	CategoryOOMKilled         = "OOMKilled"
-	CategoryFailedScheduling  = "FailedScheduling"
-	CategoryCrashLoopBackOff  = "CrashLoopBackOff"
-	CategoryProbeFailure      = "ProbeFailure"
-	CategoryMissingConfigMap  = "MissingConfigMap"
-	CategoryMissingSecret     = "MissingSecret"
-	CategoryUnboundPVC        = "UnboundPVC"
-	CategorySelectorMismatch  = "SelectorMismatch"
+	CategoryImagePullBackOff = "ImagePullBackOff"
+	CategoryOOMKilled        = "OOMKilled"
+	CategorySIGKILL          = "SIGKILL"
+	CategoryFailedScheduling = "FailedScheduling"
+	CategoryCrashLoopBackOff = "CrashLoopBackOff"
+	CategoryProbeFailure     = "ProbeFailure"
+	CategoryMissingConfigMap = "MissingConfigMap"
+	CategoryMissingSecret    = "MissingSecret"
+	CategoryUnboundPVC       = "UnboundPVC"
+	CategorySelectorMismatch = "SelectorMismatch"
 )
 
 // Finding is a structured diagnostic result from the rule engine.

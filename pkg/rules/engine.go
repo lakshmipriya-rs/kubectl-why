@@ -12,6 +12,7 @@ type RuleFunc func(facts *collect.PodFacts) *Finding
 var registry = []RuleFunc{
 	CheckImagePullBackOff,
 	CheckOOMKilled,
+	CheckSIGKILL,
 	CheckFailedScheduling,
 }
 

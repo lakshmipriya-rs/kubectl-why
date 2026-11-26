@@ -138,3 +138,38 @@ func TestCollect_PVC(t *testing.T) {
 		t.Errorf("expected 1 PVC, got %d", len(facts.PVCs))
 	}
 }
+
+// Node conditions are collected whenever the pod is assigned to a node, not
+// only while Pending (e.g. a Running pod on a node under MemoryPressure).
+func TestCollect_NodeConditions_ScheduledPod(t *testing.T) {
+	pod := makePod("onnode", "default", corev1.PodRunning)
+	pod.Spec.NodeName = "worker-1"
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
+		Status: corev1.NodeStatus{
+			Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeMemoryPressure, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+	client := fake.NewSimpleClientset(pod, node)
+	facts, err := collect.New(client).Collect(context.Background(), "onnode", "default")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(facts.NodeConditions) != 1 || facts.NodeConditions[0].Type != corev1.NodeMemoryPressure {
+		t.Errorf("expected MemoryPressure condition, got %v", facts.NodeConditions)
+	}
+}
+
+func TestCollect_NodeConditions_UnscheduledPod(t *testing.T) {
+	pod := makePod("nonode", "default", corev1.PodPending)
+	client := fake.NewSimpleClientset(pod)
+	facts, err := collect.New(client).Collect(context.Background(), "nonode", "default")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(facts.NodeConditions) != 0 {
+		t.Errorf("expected no node conditions for unscheduled pod, got %v", facts.NodeConditions)
+	}
+}

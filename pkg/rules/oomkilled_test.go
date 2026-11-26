@@ -47,13 +47,45 @@ func podWithOOM(exitCode int32, reason string) *collect.PodFacts {
 	}
 }
 
-func TestOOMKilled_ExitCode137(t *testing.T) {
-	f := rules.CheckOOMKilled(podWithOOM(137, "Error"))
-	if f == nil {
-		t.Fatal("expected finding for exit code 137")
+// Exit 137 without Reason=OOMKilled is a SIGKILL, not necessarily an OOM kill.
+func TestOOMKilled_ExitCode137WithoutOOMReason(t *testing.T) {
+	facts := podWithOOM(137, "Error")
+	if f := rules.CheckOOMKilled(facts); f != nil {
+		t.Errorf("expected no OOMKilled finding for exit 137 reason=Error, got %+v", f)
 	}
-	if f.Category != rules.CategoryOOMKilled {
-		t.Errorf("category = %q, want %q", f.Category, rules.CategoryOOMKilled)
+	f := rules.CheckSIGKILL(facts)
+	if f == nil {
+		t.Fatal("expected SIGKILL finding for exit 137 reason=Error")
+	}
+	if f.Category != rules.CategorySIGKILL {
+		t.Errorf("category = %q, want %q", f.Category, rules.CategorySIGKILL)
+	}
+	if f.Severity != "warning" {
+		t.Errorf("severity = %q, want warning", f.Severity)
+	}
+}
+
+func TestSIGKILL_NotReportedForOOM(t *testing.T) {
+	if f := rules.CheckSIGKILL(podWithOOM(137, "OOMKilled")); f != nil {
+		t.Errorf("expected no SIGKILL finding when reason is OOMKilled, got %+v", f)
+	}
+}
+
+func TestSIGKILL_IncludesProbeEvents(t *testing.T) {
+	facts := podWithOOM(137, "Error")
+	facts.Events = []corev1.Event{
+		{Reason: "Unhealthy", Message: "Liveness probe failed: connection refused"},
+		{Reason: "Pulled", Message: "Successfully pulled image"},
+	}
+	f := rules.CheckSIGKILL(facts)
+	if f == nil {
+		t.Fatal("expected SIGKILL finding")
+	}
+	if !containsSubstring(f.Evidence, "Liveness probe failed") {
+		t.Errorf("expected Unhealthy event in evidence, got %v", f.Evidence)
+	}
+	if containsSubstring(f.Evidence, "Successfully pulled") {
+		t.Errorf("unrelated event leaked into evidence: %v", f.Evidence)
 	}
 }
 
@@ -61,6 +93,12 @@ func TestOOMKilled_ReasonOOMKilled(t *testing.T) {
 	f := rules.CheckOOMKilled(podWithOOM(137, "OOMKilled"))
 	if f == nil {
 		t.Fatal("expected finding for OOMKilled reason")
+	}
+	if f.Category != rules.CategoryOOMKilled {
+		t.Errorf("category = %q, want %q", f.Category, rules.CategoryOOMKilled)
+	}
+	if !containsSubstring(f.Evidence, "memory limit: 10Mi") {
+		t.Errorf("expected memory limit in evidence, got %v", f.Evidence)
 	}
 }
 

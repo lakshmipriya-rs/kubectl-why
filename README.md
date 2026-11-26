@@ -165,7 +165,8 @@ rules:
 | Rule | Category |
 |------|----------|
 | Container waiting with `ImagePullBackOff` or `ErrImagePull` | `ImagePullBackOff` |
-| Exit code 137 or `OOMKilled` reason | `OOMKilled` |
+| Container terminated with `OOMKilled` reason | `OOMKilled` |
+| Exit code 137 (SIGKILL) without `OOMKilled` — probe kill, grace period, eviction | `SIGKILL` |
 | `FailedScheduling` events while Pending | `FailedScheduling` |
 | _(planned)_ CrashLoopBackOff | `CrashLoopBackOff` |
 | _(planned)_ Failing liveness/readiness probes | `ProbeFailure` |

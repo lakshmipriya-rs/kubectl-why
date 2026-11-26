@@ -3,6 +3,7 @@
 package rules_test
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -102,4 +103,59 @@ func TestImagePullBackOff_InitContainer(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected finding for init container pull error")
 	}
+}
+
+// Regression: a crash-looping pod emits "BackOff" events but its image is fine.
+// It must not be reported as ImagePullBackOff.
+func TestImagePullBackOff_NotTriggeredByCrashLoopEvents(t *testing.T) {
+	facts := &collect.PodFacts{
+		Pod: &corev1.Pod{
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{
+					{
+						Name:  "app",
+						Image: "busybox:1.36",
+						State: corev1.ContainerState{
+							Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
+						},
+					},
+				},
+			},
+		},
+		Events: []corev1.Event{
+			{Reason: "BackOff", Message: "Back-off restarting failed container app in pod crashy"},
+			{Reason: "Failed", Message: "Error: failed to start container"},
+		},
+	}
+	if f := rules.CheckImagePullBackOff(facts); f != nil {
+		t.Errorf("expected nil for crash-looping pod, got %+v", f)
+	}
+}
+
+func TestImagePullBackOff_OnlyPullEventsAsEvidence(t *testing.T) {
+	facts := fakePodWithWaiting("ImagePullBackOff")
+	facts.Events = []corev1.Event{
+		{Reason: "BackOff", Message: `Back-off pulling image "nginx:doesnotexist999"`},
+		{Reason: "Failed", Message: `Failed to pull image "nginx:doesnotexist999": not found`},
+		{Reason: "BackOff", Message: "Back-off restarting failed container sidecar"},
+	}
+	f := rules.CheckImagePullBackOff(facts)
+	if f == nil {
+		t.Fatal("expected finding")
+	}
+	if !containsSubstring(f.Evidence, "Failed to pull image") {
+		t.Errorf("expected pull event in evidence, got %v", f.Evidence)
+	}
+	if containsSubstring(f.Evidence, "restarting failed container") {
+		t.Errorf("crash-loop event leaked into evidence: %v", f.Evidence)
+	}
+}
+
+func containsSubstring(items []string, sub string) bool {
+	for _, it := range items {
+		if strings.Contains(it, sub) {
+			return true
+		}
+	}
+	return false
 }
