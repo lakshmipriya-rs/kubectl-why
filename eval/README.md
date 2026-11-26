@@ -39,11 +39,14 @@ kind delete cluster --name why-eval
 If pods sit in `ImagePullBackOff` with `x509: certificate signed by unknown authority`, kind's containerd doesn't trust your network's proxy certificate. Pull the images on the host and load them into kind instead (the manifests use `imagePullPolicy: IfNotPresent`):
 
 ```bash
-docker pull polinux/stress:latest && kind load docker-image --name why-eval polinux/stress:latest
-docker pull --platform linux/amd64 busybox:1.36 && docker save --platform linux/amd64 busybox:1.36 -o busybox.tar && kind load image-archive busybox.tar --name why-eval
+docker pull --platform linux/amd64 busybox:1.36
+docker save --platform linux/amd64 busybox:1.36 -o busybox.tar
+kind load image-archive busybox.tar --name why-eval
 ```
 
-Scenario 01 needs no image (its tag is meant to fail), and scenario 03 never gets scheduled.
+(`kind load docker-image` can fail on multi-architecture images with `content digest … not found`; saving a single platform avoids that. A `mismatched image rootfs` warning from `kind load image-archive` is harmless.)
+
+All scenarios use only the official `busybox:1.36` image, apart from scenario 01, whose image tag is meant not to exist.
 
 | Flag | Default | Description |
 |------|---------|-------------|
