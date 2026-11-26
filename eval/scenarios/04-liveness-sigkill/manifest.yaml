@@ -1,0 +1,32 @@
+---
+# Scenario 04: SIGKILL from a failing liveness probe (not an OOM kill)
+# The liveness probe always fails, so the kubelet kills the container.
+# `sleep` runs as PID 1 and ignores SIGTERM, so after the 2s grace period it is
+# SIGKILLed: exit code 137 with reason "Error", NOT "OOMKilled".
+# kubectl-why should report SIGKILL (and point at the probe), not OOMKilled.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-kill
+  labels:
+    scenario: liveness-sigkill
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 2
+  containers:
+    - name: app
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load docker-image`
+      command: ["sleep", "3600"]
+      livenessProbe:
+        exec:
+          command: ["false"]
+        initialDelaySeconds: 3
+        periodSeconds: 3
+        failureThreshold: 1
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "16Mi"
+        limits:
+          memory: "64Mi"

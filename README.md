@@ -197,7 +197,7 @@ rules:
 
 ## Eval suite
 
-See [`eval/README.md`](eval/README.md) for how to run the 25+ broken-manifest evaluation suite against a kind cluster.
+See [`eval/README.md`](eval/README.md) for how to run the broken-manifest evaluation suite against a kind cluster. Every rule should ship with a scenario.
 
 ---
 

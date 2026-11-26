@@ -1,41 +1,92 @@
 # Eval Suite
 
-The eval suite applies broken manifests to a [kind](https://kind.sigs.k8s.io/) cluster, runs `kubectl-why`, and scores the output for:
+The eval suite applies deliberately broken manifests to a [kind](https://kind.sigs.k8s.io/) cluster, runs `kubectl-why` against the failing pod, and scores the JSON output.
+
+Each scenario runs in its own namespace (`why-eval-<scenario>`), which is deleted afterwards, so scenarios never pick up each other's pods or anything in `default`.
+
+## Scoring
 
 | Metric | Points |
 |--------|--------|
-| Correct root-cause category | 1 |
-| Each fix keyword present | 0.5 |
-| Each hallucinated term | −1 |
+| Expected category present in `findings` | 1 |
+| Each fix keyword present in the output | 0.5 |
+| Each must-not-hallucinate term present | −1 |
+
+A scenario **passes** when it ran without errors, the expected category was reported, and no must-not-hallucinate term appeared. The harness exits non-zero if any scenario fails, so it can gate CI.
 
 ## Running
 
 ```bash
 # 1. Start a kind cluster
-kind create cluster
+kind create cluster --name why-eval
 
 # 2. Build kubectl-why
 go build -o kubectl-why .
 
-# 3. Run the harness
+# 3. Run all scenarios (rules-only, no LLM)
 go run ./eval/harness --scenarios ./eval/scenarios --binary ./kubectl-why
+
+# Run one scenario, or let kubectl-why use its LLM provider
+go run ./eval/harness --binary ./kubectl-why --run 04
+go run ./eval/harness --binary ./kubectl-why --llm
+
+# 4. Clean up
+kind delete cluster --name why-eval
 ```
+
+### Behind a TLS-intercepting proxy
+
+If pods sit in `ImagePullBackOff` with `x509: certificate signed by unknown authority`, kind's containerd doesn't trust your network's proxy certificate. Pull the images on the host and load them into kind instead (the manifests use `imagePullPolicy: IfNotPresent`):
+
+```bash
+docker pull polinux/stress:latest && kind load docker-image --name why-eval polinux/stress:latest
+docker pull --platform linux/amd64 busybox:1.36 && docker save --platform linux/amd64 busybox:1.36 -o busybox.tar && kind load image-archive busybox.tar --name why-eval
+```
+
+Scenario 01 needs no image (its tag is meant to fail), and scenario 03 never gets scheduled.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--scenarios` | `eval/scenarios` | Scenarios directory |
+| `--binary` | `kubectl-why` | kubectl-why binary to test |
+| `--run` | _(all)_ | Only scenarios whose directory name contains this |
+| `--llm` | `false` | Don't pass `--no-llm` to kubectl-why |
+| `--timeout` | `3m` | Per-scenario wait for the failure state |
 
 ## Scenarios
 
-| # | Name | Expected Category |
+| # | Name | Expected category |
 |---|------|------------------|
-| 01 | bad-image | ImagePullBackOff |
-| 02 | oomkilled | OOMKilled |
-| 03 | unschedulable | FailedScheduling |
+| 01 | bad-image | `ImagePullBackOff` |
+| 02 | oomkilled | `OOMKilled` |
+| 03 | unschedulable | `FailedScheduling` |
+| 04 | liveness-sigkill | `SIGKILL` |
 
-## Sample Score Table
+## Adding a scenario
 
+Create `eval/scenarios/NN-name/` with:
+
+- `manifest.yaml`: the broken workload. **Do not set `metadata.namespace`**; the harness applies it into the scenario's namespace.
+- `ground-truth.json`:
+
+```json
+{
+  "scenario": "NN-name",
+  "description": "What is broken",
+  "expected_category": "OOMKilled",
+  "fix_keywords": ["memory", "limit"],
+  "must_not_hallucinate": ["ImagePullBackOff"],
+  "pod_selector": "app=web",
+  "wait_for": {
+    "pod_phase": "Pending",
+    "container_waiting_reason": "ImagePullBackOff",
+    "container_terminated_reason": "OOMKilled",
+    "exit_code": 137,
+    "event_reason": "FailedScheduling"
+  }
+}
 ```
-SCENARIO         CATEGORY_OK  FIX    HALLUC  SCORE  ERROR
-01-bad-image     ✓            3/4    0       0.85
-02-oomkilled     ✓            4/5    0       0.80
-03-unschedulable ✓            4/5    0       0.80
-```
 
-*(Scores improve with an LLM provider; run without `--no-llm` for richer analysis.)*
+All `wait_for` fields are optional, but set at least one. Every field that is set must match. Container conditions match on any container or init container, including its previous (restarted) state. `pod_selector` is only needed when a scenario creates several pods.
+
+`go test ./eval/...` checks that every scenario's files are valid.

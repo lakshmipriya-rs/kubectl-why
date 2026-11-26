@@ -1,0 +1,15 @@
+{
+  "scenario": "04-liveness-sigkill",
+  "description": "Always-failing liveness probe gets the container SIGKILLed (exit 137) without an OOM kill",
+  "expected_category": "SIGKILL",
+  "fix_keywords": ["liveness", "probe", "137"],
+  "must_not_hallucinate": [
+    "OOMKilled",
+    "ImagePullBackOff",
+    "FailedScheduling"
+  ],
+  "wait_for": {
+    "container_terminated_reason": "Error",
+    "exit_code": 137
+  }
+}
