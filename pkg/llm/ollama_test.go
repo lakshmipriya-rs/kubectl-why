@@ -20,7 +20,7 @@ func TestNewOllama_HasTimeout(t *testing.T) {
 
 func TestOllama_Complete_ParsesResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		inner := `{"root_cause":"bad tag","causal_chain":["a","b"],"evidence":["e"],"fix":"use nginx:1.27","confidence":"high"}`
+		inner := `{"root_cause":"bad tag","causal_chain":["a","b"],"evidence_ids":["E1"],"fix":"use nginx:1.27","confidence":"high"}`
 		_ = json.NewEncoder(w).Encode(map[string]any{"response": inner, "done": true})
 	}))
 	defer srv.Close()

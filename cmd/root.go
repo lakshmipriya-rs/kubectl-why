@@ -134,7 +134,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── Validate ──────────────────────────────────────────────────────────────
-	resp = validate.FilterUnsupported(resp, facts)
+	resp = validate.FilterUnsupported(resp, findings)
 
 	// ── Report ────────────────────────────────────────────────────────────────
 	r := report.New(os.Stdout)

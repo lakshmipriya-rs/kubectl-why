@@ -3,7 +3,6 @@
 package rules_test
 
 import (
-	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -143,19 +142,10 @@ func TestImagePullBackOff_OnlyPullEventsAsEvidence(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected finding")
 	}
-	if !containsSubstring(f.Evidence, "Failed to pull image") {
+	if !evidenceContains(f.Evidence, "Failed to pull image") {
 		t.Errorf("expected pull event in evidence, got %v", f.Evidence)
 	}
-	if containsSubstring(f.Evidence, "restarting failed container") {
+	if evidenceContains(f.Evidence, "restarting failed container") {
 		t.Errorf("crash-loop event leaked into evidence: %v", f.Evidence)
 	}
-}
-
-func containsSubstring(items []string, sub string) bool {
-	for _, it := range items {
-		if strings.Contains(it, sub) {
-			return true
-		}
-	}
-	return false
 }

@@ -3,7 +3,6 @@
 package rules
 
 import (
-	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,22 +20,27 @@ func CheckImagePullBackOff(facts *collect.PodFacts) *Finding {
 	if facts.Pod == nil {
 		return nil
 	}
+	src := podSource(facts.Pod)
 
-	var evidence []string
-	collectPullErrors := func(label string, statuses []corev1.ContainerStatus) {
+	var evidence []Evidence
+	collectPullErrors := func(init bool, statuses []corev1.ContainerStatus) {
 		for _, cs := range statuses {
 			if cs.State.Waiting == nil || !isImagePullReason(cs.State.Waiting.Reason) {
 				continue
 			}
+			f := statusField(init, cs.Name)
 			evidence = append(evidence,
-				fmt.Sprintf("%s %q: waiting reason=%q message=%q",
-					label, cs.Name, cs.State.Waiting.Reason, cs.State.Waiting.Message),
-				fmt.Sprintf("image: %q", cs.Image),
+				Evidence{Source: src, Field: f + ".state.waiting.reason", Value: cs.State.Waiting.Reason},
+				Evidence{Source: src, Field: f + ".image", Value: cs.Image},
 			)
+			if cs.State.Waiting.Message != "" {
+				evidence = append(evidence,
+					Evidence{Source: src, Field: f + ".state.waiting.message", Value: cs.State.Waiting.Message})
+			}
 		}
 	}
-	collectPullErrors("container", facts.Pod.Status.ContainerStatuses)
-	collectPullErrors("init container", facts.Pod.Status.InitContainerStatuses)
+	collectPullErrors(false, facts.Pod.Status.ContainerStatuses)
+	collectPullErrors(true, facts.Pod.Status.InitContainerStatuses)
 
 	// No container is in a pull-error state: this rule does not apply,
 	// regardless of what events say.
@@ -47,7 +51,7 @@ func CheckImagePullBackOff(facts *collect.PodFacts) *Finding {
 	// Corroborate with pull-related events only.
 	for _, evt := range facts.Events {
 		if isImagePullEvent(evt) {
-			evidence = append(evidence, fmt.Sprintf("event %q: %s", evt.Reason, evt.Message))
+			evidence = append(evidence, eventEvidence(evt))
 		}
 	}
 

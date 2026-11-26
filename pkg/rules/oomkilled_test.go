@@ -81,10 +81,10 @@ func TestSIGKILL_IncludesProbeEvents(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected SIGKILL finding")
 	}
-	if !containsSubstring(f.Evidence, "Liveness probe failed") {
+	if !evidenceContains(f.Evidence, "Liveness probe failed") {
 		t.Errorf("expected Unhealthy event in evidence, got %v", f.Evidence)
 	}
-	if containsSubstring(f.Evidence, "Successfully pulled") {
+	if evidenceContains(f.Evidence, "Successfully pulled") {
 		t.Errorf("unrelated event leaked into evidence: %v", f.Evidence)
 	}
 }
@@ -97,7 +97,7 @@ func TestOOMKilled_ReasonOOMKilled(t *testing.T) {
 	if f.Category != rules.CategoryOOMKilled {
 		t.Errorf("category = %q, want %q", f.Category, rules.CategoryOOMKilled)
 	}
-	if !containsSubstring(f.Evidence, "memory limit: 10Mi") {
+	if !evidenceContains(f.Evidence, "spec.containers[app].resources.limits.memory: 10Mi") {
 		t.Errorf("expected memory limit in evidence, got %v", f.Evidence)
 	}
 }

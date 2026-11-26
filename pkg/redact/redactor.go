@@ -134,8 +134,8 @@ func Redact(facts *collect.PodFacts) *RedactedFacts {
 	return r
 }
 
-// Findings returns a copy of findings with Detail and every Evidence item
-// redacted. Rule evidence is built from raw event and container messages, so it
+// Findings returns a copy of findings with Detail and every Evidence value
+// redacted (IDs, sources and field paths are kept). Rule evidence is built from raw event and container messages, so it
 // must go through the same redaction as logs before leaving the machine.
 // The input slice is not modified.
 func Findings(findings []rules.Finding) []rules.Finding {
@@ -147,9 +147,10 @@ func Findings(findings []rules.Finding) []rules.Finding {
 		out[i] = f
 		out[i].Detail = redactString(f.Detail)
 		if f.Evidence != nil {
-			out[i].Evidence = make([]string, len(f.Evidence))
+			out[i].Evidence = make([]rules.Evidence, len(f.Evidence))
 			for j, e := range f.Evidence {
-				out[i].Evidence[j] = redactString(e)
+				e.Value = redactString(e.Value)
+				out[i].Evidence[j] = e
 			}
 		}
 	}

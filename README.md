@@ -12,20 +12,27 @@
 `kubectl describe pod` and `kubectl logs` give you raw data. `kubectl-why` gives you a **diagnosis**:
 
 ```
-🔴 [ImagePullBackOff] One or more containers cannot pull their image.
+🔍 Rule Engine Findings
+────────────────────────────────────────────────────────────
+🔴 [ImagePullBackOff] One or more containers cannot pull their image. Check that the image tag exists and that imagePullSecrets are configured correctly.
    Evidence:
-     • container "app": waiting reason="ImagePullBackOff" message="Back-off pulling image"
-     • image: "nginx:doesnotexist999"
-     • event "Failed": Back-off pulling image "nginx:doesnotexist999"
+     • [E1] Pod/bad-image-7d9f status.containerStatuses[app].state.waiting.reason: ImagePullBackOff
+     • [E2] Pod/bad-image-7d9f status.containerStatuses[app].image: nginx:doesnotexist999
+     • [E3] Pod/bad-image-7d9f status.containerStatuses[app].state.waiting.message: Back-off pulling image "nginx:doesnotexist999"
+     • [E4] Event Failed: Failed to pull image "nginx:doesnotexist999": not found (x3)
 
 🤖 LLM Analysis  (confidence: high)
 ────────────────────────────────────────────────────────────
 Root cause:  The image tag "doesnotexist999" does not exist on Docker Hub.
 
 Causal chain:
-  1. Deployment specifies image nginx:doesnotexist999
-  2. kubelet cannot pull the image (tag not found)
-  3. Container enters ImagePullBackOff with exponential back-off
+  1. The pod spec uses image nginx:doesnotexist999
+  2. The registry reports the tag as not found
+  3. The kubelet backs off and retries (ImagePullBackOff)
+
+Cited evidence:
+  • [E2] Pod/bad-image-7d9f status.containerStatuses[app].image: nginx:doesnotexist999
+  • [E4] Event Failed: Failed to pull image "nginx:doesnotexist999": not found (x3)
 
 Suggested fix:
   Update the image tag to a valid tag (e.g. nginx:stable or nginx:1.27).
@@ -115,10 +122,10 @@ kubectl why <pod>
 │   pkg/llm       │  Provider interface → Ollama (default) / Anthropic / OpenAI
 │   LLM Layer     │  Logs/events wrapped in delimiter blocks (prompt injection guard)
 └────────┬────────┘
-         │ Response {root_cause, causal_chain, evidence[], fix, confidence}
+         │ Response {root_cause, causal_chain, evidence_ids[], fix, confidence}
          ▼
 ┌─────────────────┐
-│  pkg/validate   │  drops LLM claims with no matching evidence item
+│  pkg/validate   │  keeps only evidence IDs that exist; uncited claims → low confidence
 └────────┬────────┘
          │
          ▼
@@ -126,6 +133,29 @@ kubectl why <pod>
 │   pkg/report    │  text (colored terminal) or JSON output
 └─────────────────┘
 ```
+
+---
+
+## Evidence model
+
+Every finding lists the facts it is based on. Each evidence item records where it came from, so you can check it yourself with `kubectl get -o yaml`:
+
+```json
+{
+  "category": "OOMKilled",
+  "detail": "One or more containers were killed by the Linux OOM killer. …",
+  "severity": "critical",
+  "evidence": [
+    {"id": "E1", "source": "Pod/oomkilled-pod", "field": "status.containerStatuses[stress].state.terminated.reason", "value": "OOMKilled"},
+    {"id": "E2", "source": "Pod/oomkilled-pod", "field": "status.containerStatuses[stress].state.terminated.exitCode", "value": "137"},
+    {"id": "E3", "source": "Pod/oomkilled-pod", "field": "spec.containers[stress].resources.limits.memory", "value": "10Mi"}
+  ]
+}
+```
+
+- `source` is the object (`Pod/<name>`, `Node/<name>`) or `Event` for an event about the pod.
+- `field` is a kubectl-style path into that object (for events, the event reason).
+- `id` is unique within one report. When an LLM is used, it must cite these IDs in `evidence_ids`; unknown IDs are dropped, and a root cause with no valid citation is shown as uncited with confidence `low`.
 
 ---
 

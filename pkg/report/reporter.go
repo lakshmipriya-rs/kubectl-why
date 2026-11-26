@@ -59,7 +59,7 @@ func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response) error
 			if len(f.Evidence) > 0 {
 				fmt.Fprintln(r.w, "   Evidence:")
 				for _, e := range f.Evidence {
-					fmt.Fprintf(r.w, "     • %s\n", e)
+					fmt.Fprintf(r.w, "     • [%s] %s\n", e.ID, e)
 				}
 			}
 			if i < len(findings)-1 {
@@ -82,11 +82,15 @@ func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response) error
 			fmt.Fprintln(r.w)
 		}
 
-		if len(resp.Evidence) > 0 {
-			fmt.Fprintln(r.w, "Supported evidence:")
-			for _, e := range resp.Evidence {
-				fmt.Fprintf(r.w, "  • %s\n", e)
+		if len(resp.EvidenceIDs) > 0 {
+			byID := evidenceByID(findings)
+			fmt.Fprintln(r.w, "Cited evidence:")
+			for _, id := range resp.EvidenceIDs {
+				fmt.Fprintf(r.w, "  • [%s] %s\n", id, byID[id])
 			}
+			fmt.Fprintln(r.w)
+		} else {
+			fmt.Fprintln(r.w, "Cited evidence: none (claims above are not backed by collected evidence)")
 			fmt.Fprintln(r.w)
 		}
 
@@ -97,6 +101,16 @@ func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response) error
 
 	fmt.Fprintln(r.w)
 	return nil
+}
+
+func evidenceByID(findings []rules.Finding) map[string]rules.Evidence {
+	m := map[string]rules.Evidence{}
+	for _, f := range findings {
+		for _, e := range f.Evidence {
+			m[e.ID] = e
+		}
+	}
+	return m
 }
 
 func severityIcon(sev string) string {

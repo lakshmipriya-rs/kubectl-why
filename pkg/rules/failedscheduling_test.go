@@ -89,6 +89,7 @@ func TestFailedScheduling_NilPod(t *testing.T) {
 func TestFailedScheduling_NodeCondition(t *testing.T) {
 	facts := &collect.PodFacts{
 		Pod: &corev1.Pod{
+			Spec:   corev1.PodSpec{NodeName: "worker-1"},
 			Status: corev1.PodStatus{Phase: corev1.PodPending},
 		},
 		Events: []corev1.Event{
@@ -106,26 +107,7 @@ func TestFailedScheduling_NodeCondition(t *testing.T) {
 	if f == nil {
 		t.Fatal("expected finding with node conditions")
 	}
-	found := false
-	for _, e := range f.Evidence {
-		if len(e) > 0 && contains(e, "MemoryPressure") {
-			found = true
-		}
+	if !evidenceContains(f.Evidence, "Node/worker-1 status.conditions[MemoryPressure]: True") {
+		t.Errorf("expected MemoryPressure node evidence, got %v", f.Evidence)
 	}
-	if !found {
-		t.Errorf("expected MemoryPressure in evidence, got %v", f.Evidence)
-	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStr(s, substr))
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

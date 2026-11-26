@@ -97,22 +97,28 @@ func TestFindings_EvidenceRedacted(t *testing.T) {
 	in := []rules.Finding{{
 		Category: rules.CategoryImagePullBackOff,
 		Detail:   "detail",
-		Evidence: []string{`event "Failed": ` + secret, `image: "nginx:1.27"`},
+		Evidence: []rules.Evidence{
+			{ID: "E1", Source: "Event", Field: "Failed", Value: "container failed: " + secret},
+			{ID: "E2", Source: "Pod/web", Field: "status.containerStatuses[app].image", Value: "nginx:1.27"},
+		},
 	}}
 	out := redact.Findings(in)
 	if len(out) != 1 {
 		t.Fatalf("got %d findings, want 1", len(out))
 	}
 	for _, e := range out[0].Evidence {
-		if strings.Contains(e, "s3cr3tV@lue") {
-			t.Errorf("secret not redacted in evidence: %q", e)
+		if strings.Contains(e.Value, "s3cr3tV@lue") {
+			t.Errorf("secret not redacted in evidence: %q", e.Value)
 		}
 	}
-	if out[0].Evidence[1] != `image: "nginx:1.27"` {
-		t.Errorf("harmless evidence changed: %q", out[0].Evidence[1])
+	if out[0].Evidence[1] != in[0].Evidence[1] {
+		t.Errorf("harmless evidence changed: %+v", out[0].Evidence[1])
+	}
+	if out[0].Evidence[0].ID != "E1" || out[0].Evidence[0].Source != "Event" {
+		t.Errorf("ID/source must be preserved: %+v", out[0].Evidence[0])
 	}
 	// The caller's findings (used for the local report) must be untouched.
-	if !strings.Contains(in[0].Evidence[0], secret) {
+	if !strings.Contains(in[0].Evidence[0].Value, secret) {
 		t.Error("Findings modified its input slice")
 	}
 }

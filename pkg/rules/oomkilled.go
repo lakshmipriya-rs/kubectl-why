@@ -3,7 +3,7 @@
 package rules
 
 import (
-	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -24,17 +24,26 @@ func CheckOOMKilled(facts *collect.PodFacts) *Finding {
 	if facts.Pod == nil {
 		return nil
 	}
+	src := podSource(facts.Pod)
 
-	memLimits := memoryLimits(facts.Pod)
-	var evidence []string
-	forEachTermination(facts.Pod, func(name, key string, t *corev1.ContainerStateTerminated) {
-		if t.Reason != "OOMKilled" {
+	var evidence []Evidence
+	limitShown := map[string]bool{}
+	forEachTermination(facts.Pod, func(t termination) {
+		if t.state.Reason != "OOMKilled" {
 			return
 		}
-		evidence = append(evidence,
-			fmt.Sprintf("container %q terminated: reason=%q exitCode=%d", name, t.Reason, t.ExitCode),
-			fmt.Sprintf("container %q memory limit: %s", name, memLimits[key]),
-		)
+		evidence = append(evidence, t.evidence(src)...)
+		// Show each container's memory limit once, even if it was OOM-killed
+		// in both its current and previous state.
+		key := specField(t.init, t.container)
+		if !limitShown[key] {
+			limitShown[key] = true
+			evidence = append(evidence, Evidence{
+				Source: src,
+				Field:  key + ".resources.limits.memory",
+				Value:  memoryLimit(facts.Pod, t.init, t.container),
+			})
+		}
 	})
 
 	if len(evidence) == 0 {
@@ -56,14 +65,14 @@ func CheckSIGKILL(facts *collect.PodFacts) *Finding {
 	if facts.Pod == nil {
 		return nil
 	}
+	src := podSource(facts.Pod)
 
-	var evidence []string
-	forEachTermination(facts.Pod, func(name, _ string, t *corev1.ContainerStateTerminated) {
-		if t.ExitCode != exitCodeSIGKILL || t.Reason == "OOMKilled" {
+	var evidence []Evidence
+	forEachTermination(facts.Pod, func(t termination) {
+		if t.state.ExitCode != exitCodeSIGKILL || t.state.Reason == "OOMKilled" {
 			return
 		}
-		evidence = append(evidence,
-			fmt.Sprintf("container %q terminated: reason=%q exitCode=%d", name, t.Reason, t.ExitCode))
+		evidence = append(evidence, t.evidence(src)...)
 	})
 
 	if len(evidence) == 0 {
@@ -74,7 +83,7 @@ func CheckSIGKILL(facts *collect.PodFacts) *Finding {
 	for _, evt := range facts.Events {
 		switch evt.Reason {
 		case "Unhealthy", "Killing", "Evicted", "Preempting":
-			evidence = append(evidence, fmt.Sprintf("event %q: %s", evt.Reason, evt.Message))
+			evidence = append(evidence, eventEvidence(evt))
 		}
 	}
 
@@ -86,39 +95,57 @@ func CheckSIGKILL(facts *collect.PodFacts) *Finding {
 	}
 }
 
-// forEachTermination calls fn for every current and last terminated state of
-// every container and init container. name is the display name ("init:x" for
-// init containers); key indexes the map returned by memoryLimits.
-func forEachTermination(pod *corev1.Pod, fn func(name, key string, t *corev1.ContainerStateTerminated)) {
-	visit := func(prefix string, statuses []corev1.ContainerStatus) {
-		for _, cs := range statuses {
-			name := prefix + cs.Name
-			for _, t := range []*corev1.ContainerStateTerminated{
-				cs.State.Terminated,
-				cs.LastTerminationState.Terminated, // captures a recently restarted container
-			} {
-				if t != nil {
-					fn(name, name, t)
-				}
-			}
-		}
-	}
-	visit("", pod.Status.ContainerStatuses)
-	visit("init:", pod.Status.InitContainerStatuses)
+// termination is one terminated state (current or last) of one container.
+type termination struct {
+	init      bool
+	container string
+	last      bool // true for lastState (a previous run of a restarted container)
+	state     *corev1.ContainerStateTerminated
 }
 
-// memoryLimits maps container display name → memory limit ("none" if unset).
-func memoryLimits(pod *corev1.Pod) map[string]string {
-	limits := make(map[string]string)
-	add := func(prefix string, containers []corev1.Container) {
-		for _, c := range containers {
-			limits[prefix+c.Name] = "none"
-			if lim, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
-				limits[prefix+c.Name] = lim.String()
+// evidence describes the termination's reason and exit code.
+func (t termination) evidence(src string) []Evidence {
+	stateName := ".state"
+	if t.last {
+		stateName = ".lastState"
+	}
+	f := statusField(t.init, t.container) + stateName + ".terminated"
+	return []Evidence{
+		{Source: src, Field: f + ".reason", Value: t.state.Reason},
+		{Source: src, Field: f + ".exitCode", Value: strconv.Itoa(int(t.state.ExitCode))},
+	}
+}
+
+// forEachTermination calls fn for every current and last terminated state of
+// every container and init container.
+func forEachTermination(pod *corev1.Pod, fn func(termination)) {
+	visit := func(init bool, statuses []corev1.ContainerStatus) {
+		for _, cs := range statuses {
+			if cs.State.Terminated != nil {
+				fn(termination{init: init, container: cs.Name, state: cs.State.Terminated})
+			}
+			if cs.LastTerminationState.Terminated != nil {
+				fn(termination{init: init, container: cs.Name, last: true, state: cs.LastTerminationState.Terminated})
 			}
 		}
 	}
-	add("", pod.Spec.Containers)
-	add("init:", pod.Spec.InitContainers)
-	return limits
+	visit(false, pod.Status.ContainerStatuses)
+	visit(true, pod.Status.InitContainerStatuses)
+}
+
+// memoryLimit returns the container's memory limit, or "none" if unset.
+func memoryLimit(pod *corev1.Pod, init bool, name string) string {
+	containers := pod.Spec.Containers
+	if init {
+		containers = pod.Spec.InitContainers
+	}
+	for _, c := range containers {
+		if c.Name != name {
+			continue
+		}
+		if lim, ok := c.Resources.Limits[corev1.ResourceMemory]; ok {
+			return lim.String()
+		}
+	}
+	return "none"
 }

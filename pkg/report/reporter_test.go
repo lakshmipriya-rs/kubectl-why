@@ -21,14 +21,16 @@ func TestReporter_TextMode(t *testing.T) {
 		{
 			Category: rules.CategoryOOMKilled,
 			Detail:   "Container killed by OOM",
-			Evidence: []string{"container app terminated exit=137"},
+			Evidence: []rules.Evidence{{
+				ID: "E1", Source: "Pod/oom", Field: "status.containerStatuses[app].state.terminated.reason", Value: "OOMKilled",
+			}},
 			Severity: "critical",
 		},
 	}
 	resp := &llm.Response{
 		RootCause:   "Memory limit too low",
 		CausalChain: []string{"app allocates 512Mi", "limit is 10Mi", "OOM killer fires"},
-		Evidence:    []string{"container app terminated exit=137"},
+		EvidenceIDs: []string{"E1"},
 		Fix:         "Increase memory limit to 512Mi",
 		Confidence:  "high",
 	}
@@ -46,6 +48,23 @@ func TestReporter_TextMode(t *testing.T) {
 	}
 	if !strings.Contains(out, "Increase memory limit") {
 		t.Error("expected fix in output")
+	}
+	if !strings.Contains(out, "[E1] Pod/oom status.containerStatuses[app].state.terminated.reason: OOMKilled") {
+		t.Errorf("expected evidence with ID in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Cited evidence:\n  • [E1] Pod/oom") {
+		t.Errorf("expected cited evidence resolved by ID, got:\n%s", out)
+	}
+}
+
+func TestReporter_UncitedLLMClaimIsFlagged(t *testing.T) {
+	var buf bytes.Buffer
+	resp := &llm.Response{RootCause: "Something", Confidence: "low"}
+	if err := report.New(&buf).Print(nil, resp, "text"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "not backed by collected evidence") {
+		t.Errorf("expected uncited warning, got:\n%s", buf.String())
 	}
 }
 
