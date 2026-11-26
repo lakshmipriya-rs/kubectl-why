@@ -12,8 +12,13 @@ import (
 )
 
 // FilterUnsupported removes evidence items from resp that cannot be corroborated
-// by anything in facts. If all evidence items are unsupported, the fix and
-// root_cause are blanked and confidence is set to "low".
+// by anything in facts. If the LLM cited evidence but none of it survives,
+// confidence is downgraded to "low". RootCause, CausalChain and Fix are left
+// unchanged.
+//
+// The check is deliberately loose: an item is kept if any significant word in
+// it appears in the collected facts. It catches fully invented evidence, not
+// subtle misstatements.
 func FilterUnsupported(resp *llm.Response, facts *collect.PodFacts) *llm.Response {
 	if resp == nil {
 		return &llm.Response{}

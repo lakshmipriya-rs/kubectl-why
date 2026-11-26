@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
@@ -22,12 +24,12 @@ import (
 
 // flags holds all CLI options.
 type flags struct {
-	namespace string
-	noLLM     bool
-	dryRun    bool
-	provider  string
-	model     string
-	output    string
+	namespace  string
+	noLLM      bool
+	dryRun     bool
+	provider   string
+	model      string
+	output     string
 	kubeconfig string
 }
 
@@ -62,7 +64,9 @@ func init() {
 
 func run(cmd *cobra.Command, args []string) error {
 	podName := args[0]
-	ctx := context.Background()
+	// Cancel API and LLM calls cleanly on Ctrl-C / SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// ── Build Kubernetes client ───────────────────────────────────────────────
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
@@ -91,14 +95,17 @@ func run(cmd *cobra.Command, args []string) error {
 	findings := rules.RunAll(facts)
 
 	// ── Redact ────────────────────────────────────────────────────────────────
+	// Everything that can leave the machine (dry-run payload, LLM prompt) uses
+	// the redacted copies. The local report below still shows raw findings.
 	redacted := redact.Redact(facts)
+	redactedFindings := redact.Findings(findings)
 
 	// ── Dry-run: print payload and stop ───────────────────────────────────────
 	if f.dryRun {
 		payload := struct {
 			RedactedFacts *redact.RedactedFacts `json:"redacted_facts"`
 			Findings      []rules.Finding       `json:"findings"`
-		}{redacted, findings}
+		}{redacted, redactedFindings}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
@@ -115,9 +122,12 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	req := llm.BuildRequest(redacted, findings)
+	req := llm.BuildRequest(redacted, redactedFindings)
 	resp, err := provider.Complete(ctx, req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err() // interrupted by the user, not an LLM failure
+		}
 		// Gracefully degrade: show rules output even if LLM fails.
 		fmt.Fprintf(os.Stderr, "warning: LLM call failed (%v) – showing rules-only output\n", err)
 		resp = &llm.Response{}

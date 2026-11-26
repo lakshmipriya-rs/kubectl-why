@@ -10,9 +10,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const defaultOllamaURL = "http://localhost:11434/api/generate"
+
+// defaultOllamaTimeout bounds a whole request. Local models can be slow on CPU,
+// so this is generous, but it prevents hanging forever if Ollama stalls.
+const defaultOllamaTimeout = 2 * time.Minute
 
 // OllamaProvider calls a local Ollama instance.
 type OllamaProvider struct {
@@ -26,7 +31,7 @@ func NewOllama(model string) *OllamaProvider {
 	return &OllamaProvider{
 		model:  model,
 		apiURL: defaultOllamaURL,
-		client: &http.Client{},
+		client: &http.Client{Timeout: defaultOllamaTimeout},
 	}
 }
 

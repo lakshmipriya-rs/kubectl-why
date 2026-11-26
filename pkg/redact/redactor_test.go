@@ -11,6 +11,7 @@ import (
 
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/collect"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/redact"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/rules"
 )
 
 func TestRedact_NilFacts(t *testing.T) {
@@ -86,5 +87,38 @@ func TestRedact_SecretNamesPreserved(t *testing.T) {
 	}
 	if len(r.RelatedCMs) != 1 || r.RelatedCMs[0] != "app-config" {
 		t.Error("CM name should be preserved")
+	}
+}
+
+// Rule evidence contains raw event/container messages and must be redacted
+// before it is sent to an LLM or printed by --dry-run.
+func TestFindings_EvidenceRedacted(t *testing.T) {
+	const secret = "DB_PASSWORD=s3cr3tV@lue"
+	in := []rules.Finding{{
+		Category: rules.CategoryImagePullBackOff,
+		Detail:   "detail",
+		Evidence: []string{`event "Failed": ` + secret, `image: "nginx:1.27"`},
+	}}
+	out := redact.Findings(in)
+	if len(out) != 1 {
+		t.Fatalf("got %d findings, want 1", len(out))
+	}
+	for _, e := range out[0].Evidence {
+		if strings.Contains(e, "s3cr3tV@lue") {
+			t.Errorf("secret not redacted in evidence: %q", e)
+		}
+	}
+	if out[0].Evidence[1] != `image: "nginx:1.27"` {
+		t.Errorf("harmless evidence changed: %q", out[0].Evidence[1])
+	}
+	// The caller's findings (used for the local report) must be untouched.
+	if !strings.Contains(in[0].Evidence[0], secret) {
+		t.Error("Findings modified its input slice")
+	}
+}
+
+func TestFindings_Nil(t *testing.T) {
+	if out := redact.Findings(nil); out != nil {
+		t.Errorf("Findings(nil) = %v, want nil", out)
 	}
 }

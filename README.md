@@ -131,32 +131,40 @@ kubectl why <pod>
 
 ## RBAC
 
-`kubectl-why` is **read-only**. Minimum RBAC:
+`kubectl-why` is **read-only** and only uses `get` and `list`. Minimum RBAC:
 
 ```yaml
+# Namespaced: grant per namespace you want to diagnose (RoleBinding).
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: kubectl-why-reader
 rules:
   - apiGroups: [""]
-    resources:
-      - pods
-      - pods/log
-      - events
-      - configmaps
-      - secrets
-      - persistentvolumeclaims
-      - nodes
-    verbs: [get, list, watch]
+    resources: [pods, pods/log, persistentvolumeclaims]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
   - apiGroups: [apps]
-    resources:
-      - replicasets
-      - deployments
-    verbs: [get, list, watch]
+    resources: [replicasets, deployments]
+    verbs: [get]
+---
+# Optional, cluster-scoped: lets kubectl-why read the conditions of the node a
+# pod runs on (MemoryPressure, DiskPressure…). Without it, that evidence is skipped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubectl-why-node-reader
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
 ```
 
-> **Note:** Secret *contents* are never read. Only names are collected to report which secrets a pod references.
+> **Note:** No access to Secrets or ConfigMaps is needed. Their *names* are read from the pod spec; their contents are never fetched.
+>
+> **Redaction:** logs, event messages and rule evidence are scrubbed of credential-like patterns before anything is sent to an LLM or printed by `--dry-run`. The local report shows rule evidence unredacted, because it never leaves your terminal.
 
 ---
 

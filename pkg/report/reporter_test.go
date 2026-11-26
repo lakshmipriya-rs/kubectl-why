@@ -26,11 +26,11 @@ func TestReporter_TextMode(t *testing.T) {
 		},
 	}
 	resp := &llm.Response{
-		RootCause:  "Memory limit too low",
+		RootCause:   "Memory limit too low",
 		CausalChain: []string{"app allocates 512Mi", "limit is 10Mi", "OOM killer fires"},
-		Evidence:   []string{"container app terminated exit=137"},
-		Fix:        "Increase memory limit to 512Mi",
-		Confidence: "high",
+		Evidence:    []string{"container app terminated exit=137"},
+		Fix:         "Increase memory limit to 512Mi",
+		Confidence:  "high",
 	}
 
 	if err := r.Print(findings, resp, "text"); err != nil {
