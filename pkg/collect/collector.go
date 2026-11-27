@@ -56,10 +56,14 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 		prevLogs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, true, tailLines)
 		facts.PreviousLogs[cs.Name] = prevLogs
 	}
-	// Init containers too.
+	// Init containers too (keyed "init:<name>"). Previous logs matter when an
+	// init container is crash-looping.
 	for _, cs := range pod.Spec.InitContainers {
 		logs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, false, tailLines)
-		facts.CurrentLogs["init:"+cs.Name] = logs
+		facts.CurrentLogs[InitLogKey(cs.Name)] = logs
+
+		prevLogs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, true, tailLines)
+		facts.PreviousLogs[InitLogKey(cs.Name)] = prevLogs
 	}
 
 	// ── Owner chain ───────────────────────────────────────────────────────────
@@ -90,6 +94,9 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 
 	return facts, nil
 }
+
+// InitLogKey is the CurrentLogs/PreviousLogs key for an init container.
+func InitLogKey(name string) string { return "init:" + name }
 
 // fetchLogs retrieves up to tailLines from the named container.
 func (c *Collector) fetchLogs(ctx context.Context, namespace, pod, container string, previous bool, tailLines int64) (string, error) {

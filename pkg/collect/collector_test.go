@@ -173,3 +173,21 @@ func TestCollect_NodeConditions_UnscheduledPod(t *testing.T) {
 		t.Errorf("expected no node conditions for unscheduled pod, got %v", facts.NodeConditions)
 	}
 }
+
+// Init containers get both current and previous logs, under "init:<name>".
+func TestCollect_InitContainerLogs(t *testing.T) {
+	pod := makePod("initpod", "default", corev1.PodPending)
+	pod.Spec.InitContainers = []corev1.Container{{Name: "migrate", Image: "busybox"}}
+	client := fake.NewSimpleClientset(pod)
+	facts, err := collect.New(client).Collect(context.Background(), "initpod", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := collect.InitLogKey("migrate")
+	if _, ok := facts.CurrentLogs[key]; !ok {
+		t.Errorf("missing current logs for %q: %v", key, facts.CurrentLogs)
+	}
+	if _, ok := facts.PreviousLogs[key]; !ok {
+		t.Errorf("missing previous logs for %q: %v", key, facts.PreviousLogs)
+	}
+}

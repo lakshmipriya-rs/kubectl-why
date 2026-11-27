@@ -119,7 +119,7 @@ kubectl why <pod> | <kind>/<name>
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
-│   Rule Engine   │  SIGKILL, FailedScheduling (more planned, see below)
+│   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff (more planned)
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -223,7 +223,7 @@ rules:
 | Container terminated with `OOMKilled` reason | `OOMKilled` |
 | Exit code 137 (SIGKILL) without `OOMKilled` — probe kill, grace period, eviction | `SIGKILL` |
 | `FailedScheduling` events while Pending | `FailedScheduling` |
-| _(planned)_ CrashLoopBackOff | `CrashLoopBackOff` |
+| Container in `CrashLoopBackOff`: exit code explained (127 command not found, 0 exited but shouldn't, …) plus the last lines of the previous run's logs | `CrashLoopBackOff` |
 | _(planned)_ Failing liveness/readiness probes | `ProbeFailure` |
 | _(planned)_ Missing ConfigMap / Secret | `MissingConfigMap` / `MissingSecret` |
 | _(planned)_ Unbound PVC | `UnboundPVC` |

@@ -64,6 +64,7 @@ All scenarios use only the official `busybox:1.36` image, apart from scenario 01
 | 02 | oomkilled | `OOMKilled` |
 | 03 | unschedulable | `FailedScheduling` |
 | 04 | liveness-sigkill | `SIGKILL` |
+| 05 | crashloop (as `deploy/crashy`) | `CrashLoopBackOff` |
 
 ## Adding a scenario
 
