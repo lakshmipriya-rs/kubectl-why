@@ -23,6 +23,12 @@ const (
 // CheckCrashLoopBackOff detects containers that keep crashing and are being
 // restarted with back-off. Evidence includes how the last run ended and the
 // last lines it logged; the detail explains common exit codes.
+//
+// Kubernetes reports a crash loop in two ways, depending on version and
+// timing: as state.waiting.reason=CrashLoopBackOff (the crashed run is in
+// lastState), or, as Kubernetes 1.35 does for most of the back-off, as
+// state.terminated with restartCount > 0 (the crashed run is the current
+// state). Both are detected.
 func CheckCrashLoopBackOff(facts *collect.PodFacts) *Finding {
 	if facts.Pod == nil {
 		return nil
@@ -35,32 +41,39 @@ func CheckCrashLoopBackOff(facts *collect.PodFacts) *Finding {
 	)
 	check := func(init bool, statuses []corev1.ContainerStatus) {
 		for _, cs := range statuses {
-			if cs.State.Waiting == nil || cs.State.Waiting.Reason != "CrashLoopBackOff" {
+			f := statusField(init, cs.Name)
+			var (
+				last     *corev1.ContainerStateTerminated
+				lastIsLS bool // the crashed run is in lastState (waiting) vs state (terminated)
+			)
+			switch {
+			case cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff":
+				last, lastIsLS = cs.LastTerminationState.Terminated, true
+				evidence = append(evidence, Evidence{Source: src, Field: f + ".state.waiting.reason", Value: "CrashLoopBackOff"})
+			case cs.State.Terminated != nil && cs.RestartCount > 0 && willRestart(facts.Pod, init, cs.State.Terminated):
+				last = cs.State.Terminated
+			default:
 				continue
 			}
-			f := statusField(init, cs.Name)
-			evidence = append(evidence,
-				Evidence{Source: src, Field: f + ".state.waiting.reason", Value: "CrashLoopBackOff"},
-				Evidence{Source: src, Field: f + ".restartCount", Value: strconv.Itoa(int(cs.RestartCount))},
-			)
-
-			last := cs.LastTerminationState.Terminated
+			evidence = append(evidence, Evidence{Source: src, Field: f + ".restartCount", Value: strconv.Itoa(int(cs.RestartCount))})
 			if last != nil {
-				t := termination{init: init, container: cs.Name, last: true, state: last}
+				t := termination{init: init, container: cs.Name, last: lastIsLS, state: last}
 				evidence = append(evidence, t.evidence(src)...)
 			}
 
+			// The crashed run's logs: "previous" while waiting for a restart,
+			// "current" while the terminated container is still the current one.
 			logKey := cs.Name
 			if init {
 				logKey = collect.InitLogKey(cs.Name)
 			}
-			logLines := tailLines(facts.PreviousLogs[logKey], crashLogLines)
+			logs, logField := facts.PreviousLogs[logKey], fmt.Sprintf("logs[%s].previous", cs.Name)
+			if !lastIsLS {
+				logs, logField = facts.CurrentLogs[logKey], fmt.Sprintf("logs[%s]", cs.Name)
+			}
+			logLines := tailLines(logs, crashLogLines)
 			for _, line := range logLines {
-				evidence = append(evidence, Evidence{
-					Source: src,
-					Field:  fmt.Sprintf("logs[%s].previous", cs.Name),
-					Value:  line,
-				})
+				evidence = append(evidence, Evidence{Source: src, Field: logField, Value: line})
 			}
 
 			// Explain the first crashing container; others are in the evidence.
@@ -137,4 +150,18 @@ func tailLines(logs string, n int) []string {
 		lines = lines[len(lines)-n:]
 	}
 	return lines
+}
+
+// willRestart reports whether Kubernetes will restart a container that ended
+// with t, given the pod's restartPolicy. Init containers are only re-run
+// after a failure.
+func willRestart(pod *corev1.Pod, init bool, t *corev1.ContainerStateTerminated) bool {
+	switch pod.Spec.RestartPolicy {
+	case corev1.RestartPolicyNever:
+		return false
+	case corev1.RestartPolicyOnFailure:
+		return t.ExitCode != 0
+	default: // Always (also the default when unset)
+		return !init || t.ExitCode != 0
+	}
 }

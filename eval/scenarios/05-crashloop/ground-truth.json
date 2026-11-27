@@ -2,7 +2,11 @@
   "scenario": "05-crashloop",
   "description": "App exits with code 1 after logging a missing-config error; Kubernetes restarts it with back-off",
   "expected_category": "CrashLoopBackOff",
-  "fix_keywords": ["exits with code 1", "config file /etc/app/config.yaml not found", "restartCount"],
+  "fix_keywords": [
+    "exits with code 1",
+    "config file /etc/app/config.yaml not found",
+    "restartCount"
+  ],
   "must_not_hallucinate": [
     "ImagePullBackOff",
     "OOMKilled",
@@ -11,6 +15,7 @@
   ],
   "target": "deploy/crashy",
   "wait_for": {
-    "container_waiting_reason": "CrashLoopBackOff"
+    "exit_code": 1,
+    "min_restarts": 2
   }
 }

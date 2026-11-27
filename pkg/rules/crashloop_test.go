@@ -173,3 +173,73 @@ func TestCrashLoop_LongLogLineTruncatedSafely(t *testing.T) {
 		}
 	}
 }
+
+// terminatedCrashPod is a crash loop as Kubernetes 1.35 reports it for most of
+// the back-off: state.terminated (the crashed run) with restartCount > 0.
+func terminatedCrashPod(policy corev1.RestartPolicy, exitCode int32, restarts int32) *collect.PodFacts {
+	return &collect.PodFacts{
+		Pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "crashy"},
+			Spec:       corev1.PodSpec{RestartPolicy: policy},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name: "app", RestartCount: restarts,
+					State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: exitCode, Reason: "Error"}},
+				}},
+			},
+		},
+		CurrentLogs:  map[string]string{"app": "FATAL: crashed run"},
+		PreviousLogs: map[string]string{"app": "older run"},
+	}
+}
+
+func TestCrashLoop_TerminatedStateStyle(t *testing.T) {
+	f := rules.CheckCrashLoopBackOff(terminatedCrashPod("", 1, 4))
+	if f == nil {
+		t.Fatal("a terminated container that has restarted and will restart again is crash-looping")
+	}
+	for _, want := range []string{
+		"Pod/crashy status.containerStatuses[app].restartCount: 4",
+		"Pod/crashy status.containerStatuses[app].state.terminated.exitCode: 1",
+		"Pod/crashy logs[app]: FATAL: crashed run", // current logs = the crashed run
+	} {
+		if !evidenceContains(f.Evidence, want) {
+			t.Errorf("missing evidence %q in %v", want, f.Evidence)
+		}
+	}
+	if evidenceContains(f.Evidence, "older run") || evidenceContains(f.Evidence, "state.waiting.reason") {
+		t.Errorf("wrong logs or a waiting reason that isn't there: %v", f.Evidence)
+	}
+	if !strings.Contains(f.Detail, "exits with code 1") {
+		t.Errorf("unexpected detail: %q", f.Detail)
+	}
+}
+
+func TestCrashLoop_TerminatedStateNotALoop(t *testing.T) {
+	tests := map[string]*collect.PodFacts{
+		"first run, no restart yet":       terminatedCrashPod("", 1, 0),
+		"restartPolicy Never":             terminatedCrashPod(corev1.RestartPolicyNever, 1, 2),
+		"OnFailure and the run succeeded": terminatedCrashPod(corev1.RestartPolicyOnFailure, 0, 2),
+		"init container finished (exit 0)": func() *collect.PodFacts {
+			f := terminatedCrashPod("", 0, 1)
+			f.Pod.Status.InitContainerStatuses, f.Pod.Status.ContainerStatuses = f.Pod.Status.ContainerStatuses, nil
+			return f
+		}(),
+	}
+	for name, facts := range tests {
+		t.Run(name, func(t *testing.T) {
+			if f := rules.CheckCrashLoopBackOff(facts); f != nil {
+				t.Errorf("expected nil, got %+v", f)
+			}
+		})
+	}
+	// OnFailure with a failing run does loop.
+	if rules.CheckCrashLoopBackOff(terminatedCrashPod(corev1.RestartPolicyOnFailure, 2, 2)) == nil {
+		t.Error("OnFailure with exit 2 restarts the container: expected a finding")
+	}
+	// Always with exit 0 loops too (the main process must not exit).
+	if f := rules.CheckCrashLoopBackOff(terminatedCrashPod(corev1.RestartPolicyAlways, 0, 3)); f == nil || !strings.Contains(f.Detail, "must not exit") {
+		t.Errorf("Always + exit 0: expected the 'must not exit' finding, got %+v", f)
+	}
+}

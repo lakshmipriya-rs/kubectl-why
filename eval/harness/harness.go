@@ -43,6 +43,10 @@ type WaitSpec struct {
 	ContainerTerminatedReason string `json:"container_terminated_reason,omitempty"`
 	ExitCode                  int    `json:"exit_code,omitempty"`
 	EventReason               string `json:"event_reason,omitempty"`
+	// MinRestarts: some container has restarted at least this many times.
+	// More reliable than a waiting reason for crash loops, whose reported
+	// state differs between Kubernetes versions.
+	MinRestarts int `json:"min_restarts,omitempty"`
 }
 
 // ScoreResult holds per-scenario scoring.
@@ -241,9 +245,10 @@ type pod struct {
 }
 
 type containerStatus struct {
-	Name      string         `json:"name"`
-	State     containerState `json:"state"`
-	LastState containerState `json:"lastState"`
+	Name         string         `json:"name"`
+	RestartCount int            `json:"restartCount"`
+	State        containerState `json:"state"`
+	LastState    containerState `json:"lastState"`
 }
 
 type containerState struct {
@@ -271,6 +276,19 @@ func matchesPodState(ws WaitSpec, p pod) bool {
 		found := false
 		for _, cs := range statuses {
 			if cs.State.Waiting != nil && strings.EqualFold(cs.State.Waiting.Reason, ws.ContainerWaitingReason) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	if ws.MinRestarts > 0 {
+		found := false
+		for _, cs := range statuses {
+			if cs.RestartCount >= ws.MinRestarts {
 				found = true
 				break
 			}
