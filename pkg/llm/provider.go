@@ -31,12 +31,8 @@ func NewProvider(name, model string) (Provider, error) {
 			m = "llama3"
 		}
 		return NewOllama(m), nil
-	case "anthropic":
-		return NewAnthropic(model)
-	case "openai":
-		return NewOpenAI(model)
 	default:
-		return nil, fmt.Errorf("unknown provider %q; supported: ollama, anthropic, openai", name)
+		return nil, fmt.Errorf("unknown provider %q; supported: ollama", name)
 	}
 }
 
@@ -48,10 +44,11 @@ func BuildRequest(facts *redact.RedactedFacts, findings []rules.Finding) Request
 	sb.WriteString("You are a Kubernetes reliability engineer. ")
 	sb.WriteString("Diagnose the failing pod described below and respond with ONLY a JSON object ")
 	sb.WriteString("matching this schema:\n")
-	sb.WriteString(`{"root_cause":"","causal_chain":[],"evidence":[],"fix":"","confidence":"high|medium|low"}`)
+	sb.WriteString(`{"root_cause":"","causal_chain":[],"evidence_ids":[],"fix":"","confidence":"high|medium|low"}`)
 	sb.WriteString("\n\nRules:\n")
-	sb.WriteString("- base every claim on a specific item in the Evidence array\n")
-	sb.WriteString("- do not invent facts\n")
+	sb.WriteString("- every evidence item in the rule findings has an \"id\" such as E1\n")
+	sb.WriteString("- put the ids of the evidence items that support your root cause in evidence_ids\n")
+	sb.WriteString("- only use ids that appear in the rule findings; never invent ids or facts\n")
 	sb.WriteString("- confidence must be 'high' only when evidence is unambiguous\n")
 
 	system := sb.String()

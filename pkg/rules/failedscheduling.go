@@ -20,11 +20,10 @@ func CheckFailedScheduling(facts *collect.PodFacts) *Finding {
 		return nil
 	}
 
-	var evidence []string
-
+	var evidence []Evidence
 	for _, evt := range facts.Events {
 		if evt.Reason == "FailedScheduling" {
-			evidence = append(evidence, fmt.Sprintf("event FailedScheduling: %s", evt.Message))
+			evidence = append(evidence, eventEvidence(evt))
 		}
 	}
 
@@ -35,7 +34,11 @@ func CheckFailedScheduling(facts *collect.PodFacts) *Finding {
 				cond.Type == corev1.NodeMemoryPressure ||
 				cond.Type == corev1.NodePIDPressure ||
 				cond.Type == corev1.NodeNetworkUnavailable) {
-			evidence = append(evidence, fmt.Sprintf("node condition %s=True: %s", cond.Type, cond.Message))
+			evidence = append(evidence, Evidence{
+				Source: "Node/" + facts.Pod.Spec.NodeName,
+				Field:  fmt.Sprintf("status.conditions[%s]", cond.Type),
+				Value:  fmt.Sprintf("True: %s", cond.Message),
+			})
 		}
 	}
 
@@ -55,9 +58,13 @@ func CheckFailedScheduling(facts *collect.PodFacts) *Finding {
 
 // buildSchedulingDetail parses common scheduling error phrases to produce
 // a more actionable detail string.
-func buildSchedulingDetail(evidence []string) string {
-	joined := strings.Join(evidence, " ")
-	lower := strings.ToLower(joined)
+func buildSchedulingDetail(evidence []Evidence) string {
+	var sb strings.Builder
+	for _, e := range evidence {
+		sb.WriteString(e.Value)
+		sb.WriteString(" ")
+	}
+	lower := strings.ToLower(sb.String())
 
 	switch {
 	case strings.Contains(lower, "insufficient cpu"):

@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 
-// eval/harness/main.go is the entry point for the evaluation harness.
-// It applies each scenario to a kind cluster, runs kubectl-why, and scores results.
+// Command harness runs the kubectl-why evaluation suite. It applies each
+// scenario to its own namespace on the current cluster (normally kind), runs
+// kubectl-why, and scores the results.
 //
 // Prerequisites:
-//   - A running kind cluster (kubectl context pointing at it)
+//   - A running cluster (kubectl context pointing at it), e.g. `kind create cluster`
 //   - kubectl-why binary in PATH or supplied via --binary
 //
 // Example:
 //
-//	go run ./eval/harness --scenarios ./eval/scenarios
+//	go run ./eval/harness --scenarios ./eval/scenarios --binary ./kubectl-why
 package main
 
 import (
@@ -17,23 +18,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
-
+	"os/signal"
+	"time"
 )
 
 func main() {
-	scenariosDir := flag.String("scenarios", "eval/scenarios", "Path to scenarios directory")
-	binary := flag.String("binary", "kubectl-why", "Path to kubectl-why binary")
+	var opts Options
+	flag.StringVar(&opts.ScenariosDir, "scenarios", "eval/scenarios", "Path to scenarios directory")
+	flag.StringVar(&opts.Binary, "binary", "kubectl-why", "Path to kubectl-why binary")
+	flag.BoolVar(&opts.UseLLM, "llm", false, "Run kubectl-why with --explain (needs its LLM provider, e.g. a local Ollama)")
+	flag.DurationVar(&opts.Timeout, "timeout", 3*time.Minute, "How long to wait for each scenario's failure state")
+	flag.StringVar(&opts.Filter, "run", "", "Only run scenarios whose directory name contains this string")
 	flag.Parse()
 
-	ctx := context.Background()
-	results := RunAll(ctx, *scenariosDir, *binary)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	results := RunAll(ctx, opts)
 	PrintTable(results)
 
-	// Exit non-zero if any scenario errored.
+	// Exit non-zero if any scenario failed, so CI can gate on the suite.
+	failed := 0
 	for _, r := range results {
-		if r.Error != "" {
-			fmt.Fprintf(os.Stderr, "scenario %s failed: %s\n", r.Scenario, r.Error)
-			os.Exit(1)
+		if !r.Passed() {
+			failed++
 		}
+	}
+	if len(results) == 0 {
+		fmt.Fprintln(os.Stderr, "no scenarios matched")
+		os.Exit(1)
+	}
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "%d of %d scenarios failed\n", failed, len(results))
+		os.Exit(1)
 	}
 }

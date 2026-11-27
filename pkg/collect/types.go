@@ -11,8 +11,8 @@ type OwnerChain struct {
 	ReplicaSetName string
 	DeploymentName string
 	// Raw owner references at each level for future revision-diff support.
-	ReplicaSetLabels  map[string]string
-	DeploymentLabels  map[string]string
+	ReplicaSetLabels map[string]string
+	DeploymentLabels map[string]string
 }
 
 // PodFacts is the raw data collected about a failing pod.
@@ -31,6 +31,6 @@ type PodFacts struct {
 
 	PVCs []corev1.PersistentVolumeClaim
 
-	// Populated when pod phase is Pending.
+	// Conditions of the node the pod is assigned to (empty if unscheduled).
 	NodeConditions []corev1.NodeCondition
 }

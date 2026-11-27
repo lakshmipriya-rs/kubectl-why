@@ -1,14 +1,21 @@
 {
   "scenario": "02-oomkilled",
-  "description": "Container with 10Mi memory limit runs a stress workload; OOM killer fires",
+  "description": "Container with a 10Mi memory limit allocates a 64M buffer; OOM killer fires",
   "expected_category": "OOMKilled",
-  "fix_keywords": ["memory", "limit", "10Mi", "OOMKilled", "137"],
+  "fix_keywords": [
+    "memory",
+    "limit",
+    "10Mi",
+    "OOMKilled",
+    "137"
+  ],
   "must_not_hallucinate": [
     "ImagePullBackOff",
     "FailedScheduling",
     "CrashLoopBackOff",
     "bad image",
-    "node selector"
+    "node selector",
+    "SIGKILL"
   ],
   "wait_for": {
     "container_terminated_reason": "OOMKilled",

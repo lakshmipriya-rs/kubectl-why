@@ -13,7 +13,9 @@ type Request struct {
 type Response struct {
 	RootCause   string   `json:"root_cause"`
 	CausalChain []string `json:"causal_chain"`
-	Evidence    []string `json:"evidence"`
+	// EvidenceIDs lists the IDs (E1, E2, …) of rule-engine evidence items that
+	// support RootCause. The validator drops IDs that don't exist.
+	EvidenceIDs []string `json:"evidence_ids"`
 	Fix         string   `json:"fix"`
 	Confidence  string   `json:"confidence"` // "high" | "medium" | "low"
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/collect"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/rules"
 )
 
 const placeholder = "[REDACTED]"
@@ -32,17 +33,17 @@ var credentialPatterns = []*regexp.Regexp{
 
 // RedactedFacts is a sanitised view of PodFacts safe to send over the network.
 type RedactedFacts struct {
-	PodName        string            `json:"pod_name"`
-	Namespace      string            `json:"namespace"`
-	Phase          string            `json:"phase"`
-	ContainerStates []ContainerSnap  `json:"container_states"`
-	Events         []EventSnap       `json:"events"`
-	CurrentLogs    map[string]string `json:"current_logs"`
-	PreviousLogs   map[string]string `json:"previous_logs"`
-	Owner          OwnerSnap         `json:"owner"`
-	RelatedCMs     []string          `json:"related_config_maps"`
-	RelatedSecrets []string          `json:"related_secrets"` // names only
-	PVCNames       []string          `json:"pvc_names"`
+	PodName         string            `json:"pod_name"`
+	Namespace       string            `json:"namespace"`
+	Phase           string            `json:"phase"`
+	ContainerStates []ContainerSnap   `json:"container_states"`
+	Events          []EventSnap       `json:"events"`
+	CurrentLogs     map[string]string `json:"current_logs"`
+	PreviousLogs    map[string]string `json:"previous_logs"`
+	Owner           OwnerSnap         `json:"owner"`
+	RelatedCMs      []string          `json:"related_config_maps"`
+	RelatedSecrets  []string          `json:"related_secrets"` // names only
+	PVCNames        []string          `json:"pvc_names"`
 }
 
 // ContainerSnap is a sanitised view of one container's state.
@@ -75,10 +76,10 @@ func Redact(facts *collect.PodFacts) *RedactedFacts {
 	pod := facts.Pod
 
 	r := &RedactedFacts{
-		PodName:     pod.Name,
-		Namespace:   pod.Namespace,
-		Phase:       string(pod.Status.Phase),
-		RelatedCMs:  facts.RelatedConfigMaps,
+		PodName:        pod.Name,
+		Namespace:      pod.Namespace,
+		Phase:          string(pod.Status.Phase),
+		RelatedCMs:     facts.RelatedConfigMaps,
 		RelatedSecrets: facts.RelatedSecrets, // names only, no values
 		Owner: OwnerSnap{
 			ReplicaSet: facts.Owner.ReplicaSetName,
@@ -131,6 +132,29 @@ func Redact(facts *collect.PodFacts) *RedactedFacts {
 	}
 
 	return r
+}
+
+// Findings returns a copy of findings with Detail and every Evidence value
+// redacted (IDs, sources and field paths are kept). Rule evidence is built from raw event and container messages, so it
+// must go through the same redaction as logs before leaving the machine.
+// The input slice is not modified.
+func Findings(findings []rules.Finding) []rules.Finding {
+	if findings == nil {
+		return nil
+	}
+	out := make([]rules.Finding, len(findings))
+	for i, f := range findings {
+		out[i] = f
+		out[i].Detail = redactString(f.Detail)
+		if f.Evidence != nil {
+			out[i].Evidence = make([]rules.Evidence, len(f.Evidence))
+			for j, e := range f.Evidence {
+				e.Value = redactString(e.Value)
+				out[i].Evidence[j] = e
+			}
+		}
+	}
+	return out
 }
 
 // redactString replaces credential-like patterns with [REDACTED].

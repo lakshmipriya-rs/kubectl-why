@@ -9,23 +9,30 @@
 
 ## Why kubectl-why?
 
-`kubectl describe pod` and `kubectl logs` give you raw data. `kubectl-why` gives you a **diagnosis**:
+`kubectl describe pod` and `kubectl logs` give you raw data. `kubectl-why` gives you a **diagnosis**, where every finding points at the exact fields and events it is based on. It runs fully offline by default; add `--explain` for an optional LLM analysis that must cite that evidence:
 
 ```
-🔴 [ImagePullBackOff] One or more containers cannot pull their image.
+🔍 Rule Engine Findings
+────────────────────────────────────────────────────────────
+🔴 [ImagePullBackOff] One or more containers cannot pull their image. Check that the image tag exists and that imagePullSecrets are configured correctly.
    Evidence:
-     • container "app": waiting reason="ImagePullBackOff" message="Back-off pulling image"
-     • image: "nginx:doesnotexist999"
-     • event "Failed": Back-off pulling image "nginx:doesnotexist999"
+     • [E1] Pod/bad-image-7d9f status.containerStatuses[app].state.waiting.reason: ImagePullBackOff
+     • [E2] Pod/bad-image-7d9f status.containerStatuses[app].image: nginx:doesnotexist999
+     • [E3] Pod/bad-image-7d9f status.containerStatuses[app].state.waiting.message: Back-off pulling image "nginx:doesnotexist999"
+     • [E4] Event Failed: Failed to pull image "nginx:doesnotexist999": not found (x3)
 
 🤖 LLM Analysis  (confidence: high)
 ────────────────────────────────────────────────────────────
 Root cause:  The image tag "doesnotexist999" does not exist on Docker Hub.
 
 Causal chain:
-  1. Deployment specifies image nginx:doesnotexist999
-  2. kubelet cannot pull the image (tag not found)
-  3. Container enters ImagePullBackOff with exponential back-off
+  1. The pod spec uses image nginx:doesnotexist999
+  2. The registry reports the tag as not found
+  3. The kubelet backs off and retries (ImagePullBackOff)
+
+Cited evidence:
+  • [E2] Pod/bad-image-7d9f status.containerStatuses[app].image: nginx:doesnotexist999
+  • [E4] Event Failed: Failed to pull image "nginx:doesnotexist999": not found (x3)
 
 Suggested fix:
   Update the image tag to a valid tag (e.g. nginx:stable or nginx:1.27).
@@ -56,43 +63,54 @@ Download from [Releases](https://github.com/lakshmipriya-rs/kubectl-why/releases
 ## Usage
 
 ```bash
-# Diagnose a pod (uses Ollama by default)
+# Diagnose a pod (rules only: no LLM, nothing leaves your machine)
 kubectl why <pod> [-n namespace]
 
-# Rules-only, no LLM call
-kubectl why mypod --no-llm
-
-# Print redacted payload without calling the LLM
-kubectl why mypod --dry-run
+# Diagnose a workload: its unhealthiest pod is picked automatically
+kubectl why deploy/web -n shop
+kubectl why sts/postgres
 
 # JSON output
 kubectl why mypod --output json
 
-# Use a specific provider / model
-kubectl why mypod --provider ollama --model mistral
-kubectl why mypod --provider anthropic --model claude-3-5-haiku-20241022
+# Also ask a local LLM (Ollama) for an analysis that cites the evidence
+kubectl why mypod --explain
+kubectl why mypod --explain --model mistral
+
+# See exactly what --explain would send (redacted), without sending it
+kubectl why mypod --dry-run
 ```
+
+Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs` or `job` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
 
 ### Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-n, --namespace` | `default` | Kubernetes namespace |
-| `--no-llm` | `false` | Rules-only; no network calls |
-| `--dry-run` | `false` | Print redacted payload, skip LLM |
-| `--provider` | `ollama` | LLM provider: `ollama \| anthropic \| openai` |
-| `--model` | _(provider default)_ | Model name override |
+| `--explain` | `false` | Also ask an LLM for an analysis citing the rule evidence |
+| `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
+| `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |
+| `--model` | `llama3` | Model for `--explain` |
 | `--output` | `text` | Output format: `text \| json` |
 | `--kubeconfig` | _(standard lookup)_ | Override kubeconfig path |
+| `--version` | | Print version, commit and build date |
+
+`--no-llm` still works but is deprecated: rules-only is now the default.
 
 ---
 
 ## Architecture
 
 ```
-kubectl why <pod>
+kubectl why <pod> | <kind>/<name>
         │
         ▼
+┌─────────────────┐
+│   pkg/target    │  pod name, or a workload's unhealthiest pod
+└────────┬────────┘
+         │ pod name
+         ▼
 ┌─────────────────┐
 │   pkg/collect   │  reads pod spec/status, events, logs (last 100 lines),
 │   Collector     │  owner chain, CM/Secret names, PVCs, node conditions
@@ -101,24 +119,24 @@ kubectl why <pod>
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
-│   Rule Engine   │  FailedScheduling, CrashLoopBackOff, probe failures,
-└────────┬────────┘  missing CM/Secret, unbound PVC, selector mismatch
-         │ []Finding
+│   Rule Engine   │  SIGKILL, FailedScheduling (more planned, see below)
+└────────┬────────┘
+         │ []Finding with evidence {id, source, field, value}
          ▼
 ┌─────────────────┐
 │   pkg/redact    │  strips secrets, tokens, base64 blobs, credential patterns
 │   Redactor      │  before any data leaves the machine
 └────────┬────────┘
-         │ RedactedFacts
+         │ RedactedFacts            ── only with --explain ──
          ▼
 ┌─────────────────┐
-│   pkg/llm       │  Provider interface → Ollama (default) / Anthropic / OpenAI
+│   pkg/llm       │  Provider interface → Ollama
 │   LLM Layer     │  Logs/events wrapped in delimiter blocks (prompt injection guard)
 └────────┬────────┘
-         │ Response {root_cause, causal_chain, evidence[], fix, confidence}
+         │ Response {root_cause, causal_chain, evidence_ids[], fix, confidence}
          ▼
 ┌─────────────────┐
-│  pkg/validate   │  drops LLM claims with no matching evidence item
+│  pkg/validate   │  keeps only evidence IDs that exist; uncited claims → low confidence
 └────────┬────────┘
          │
          ▼
@@ -129,34 +147,71 @@ kubectl why <pod>
 
 ---
 
+## Evidence model
+
+Every finding lists the facts it is based on. Each evidence item records where it came from, so you can check it yourself with `kubectl get -o yaml`:
+
+```json
+{
+  "category": "OOMKilled",
+  "detail": "One or more containers were killed by the Linux OOM killer. …",
+  "severity": "critical",
+  "evidence": [
+    {"id": "E1", "source": "Pod/oomkilled-pod", "field": "status.containerStatuses[stress].state.terminated.reason", "value": "OOMKilled"},
+    {"id": "E2", "source": "Pod/oomkilled-pod", "field": "status.containerStatuses[stress].state.terminated.exitCode", "value": "137"},
+    {"id": "E3", "source": "Pod/oomkilled-pod", "field": "spec.containers[stress].resources.limits.memory", "value": "10Mi"}
+  ]
+}
+```
+
+- `source` is the object (`Pod/<name>`, `Node/<name>`) or `Event` for an event about the pod.
+- `field` is a kubectl-style path into that object (for events, the event reason).
+- `id` is unique within one report. When an LLM is used, it must cite these IDs in `evidence_ids`; unknown IDs are dropped, and a root cause with no valid citation is shown as uncited with confidence `low`.
+
+---
+
 ## RBAC
 
-`kubectl-why` is **read-only**. Minimum RBAC:
+`kubectl-why` is **read-only** and only uses `get` and `list`. Minimum RBAC:
 
 ```yaml
+# Namespaced: grant per namespace you want to diagnose (RoleBinding).
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: kubectl-why-reader
 rules:
   - apiGroups: [""]
-    resources:
-      - pods
-      - pods/log
-      - events
-      - configmaps
-      - secrets
-      - persistentvolumeclaims
-      - nodes
-    verbs: [get, list, watch]
+    resources: [pods/log, persistentvolumeclaims]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]   # list: find a workload's pods
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [list]
   - apiGroups: [apps]
-    resources:
-      - replicasets
-      - deployments
-    verbs: [get, list, watch]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get]
+---
+# Optional, cluster-scoped: lets kubectl-why read the conditions of the node a
+# pod runs on (MemoryPressure, DiskPressure…). Without it, that evidence is skipped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubectl-why-node-reader
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get]
 ```
 
-> **Note:** Secret *contents* are never read. Only names are collected to report which secrets a pod references.
+> **Note:** No access to Secrets or ConfigMaps is needed. Their *names* are read from the pod spec; their contents are never fetched.
+>
+> **Redaction:** logs, event messages and rule evidence are scrubbed of credential-like patterns before anything is sent to an LLM or printed by `--dry-run`. The local report shows rule evidence unredacted, because it never leaves your terminal.
 
 ---
 
@@ -165,7 +220,8 @@ rules:
 | Rule | Category |
 |------|----------|
 | Container waiting with `ImagePullBackOff` or `ErrImagePull` | `ImagePullBackOff` |
-| Exit code 137 or `OOMKilled` reason | `OOMKilled` |
+| Container terminated with `OOMKilled` reason | `OOMKilled` |
+| Exit code 137 (SIGKILL) without `OOMKilled` — probe kill, grace period, eviction | `SIGKILL` |
 | `FailedScheduling` events while Pending | `FailedScheduling` |
 | _(planned)_ CrashLoopBackOff | `CrashLoopBackOff` |
 | _(planned)_ Failing liveness/readiness probes | `ProbeFailure` |
@@ -177,18 +233,19 @@ rules:
 
 ## LLM providers
 
+The LLM is **optional** and only used with `--explain`. Without it, kubectl-why makes no network calls except to the Kubernetes API.
+
 | Provider | Flag | Status |
 |----------|------|--------|
-| Ollama (local) | `--provider ollama` | ✅ Implemented |
-| Anthropic | `--provider anthropic` | 🚧 Stub (coming soon) |
-| OpenAI | `--provider openai` | 🚧 Stub (coming soon) |
-| None | `--no-llm` | ✅ Rules-only mode |
+| None (default) | _(no flag)_ | ✅ Rules-only, fully offline |
+| Ollama (local) | `--explain --provider ollama` | ✅ Implemented |
+| Hosted providers | | 🗺️ Planned. For Claude and other AI assistants, see the MCP server on the roadmap. |
 
 ---
 
 ## Eval suite
 
-See [`eval/README.md`](eval/README.md) for how to run the 25+ broken-manifest evaluation suite against a kind cluster.
+See [`eval/README.md`](eval/README.md) for how to run the broken-manifest evaluation suite against a kind cluster. Every rule should ship with a scenario.
 
 ---
 

@@ -1,28 +1,21 @@
 ---
 # Scenario 02: OOMKilled
-# Container has a 10Mi memory limit but runs a stress workload that allocates 64Mi.
-# The Linux OOM killer will terminate it with exit code 137.
+# The container has a 10Mi memory limit, but `dd` allocates a single 64M buffer.
+# The Linux OOM killer terminates it: reason "OOMKilled", exit code 137.
 # kubectl-why should detect OOMKilled and suggest increasing the memory limit.
 apiVersion: v1
 kind: Pod
 metadata:
   name: oomkilled-pod
-  namespace: default
   labels:
     scenario: oomkilled
 spec:
   restartPolicy: Never
   containers:
     - name: stress
-      image: polinux/stress:latest
-      command: ["stress"]
-      args:
-        - "--vm"
-        - "1"
-        - "--vm-bytes"
-        - "64M"
-        - "--vm-hang"
-        - "0"
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load docker-image`
+      command: ["dd", "if=/dev/zero", "of=/dev/null", "bs=64M", "count=1"]
       resources:
         requests:
           memory: "10Mi"
