@@ -92,7 +92,7 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 | `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
 | `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |
 | `--model` | `llama3` | Model for `--explain` |
-| `--output` | `text` | Output format: `text \| json` |
+| `-o, --output` | `text` | Output format: `text \| json` |
 | `--kubeconfig` | _(standard lookup)_ | Override kubeconfig path |
 | `--version` | | Print version, commit and build date |
 
@@ -113,14 +113,14 @@ kubectl why <pod> | <kind>/<name>
          ▼
 ┌─────────────────┐
 │   pkg/collect   │  reads pod spec/status, events, logs (last 100 lines),
-│   Collector     │  owner chain, CM/Secret names, PVCs, node conditions
+│   Collector     │  owner chain, CM/Secret names, PVCs + their events, node conditions
 └────────┬────────┘
          │ PodFacts
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
 │   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure,
-│                 │  MissingConfigMap, MissingSecret
+│                 │  MissingConfigMap, MissingSecret, UnboundPVC
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -227,7 +227,7 @@ rules:
 | Container in `CrashLoopBackOff`: exit code explained (127 command not found, 0 exited but shouldn't, …) plus the last lines of the previous run's logs | `CrashLoopBackOff` |
 | Failing liveness/readiness/startup probes: probe config shown next to the failure; wrong port, 404 path, timeouts and auth errors explained | `ProbeFailure` |
 | Missing ConfigMap / Secret (or a key in one), from the kubelet's errors: points at the env, envFrom or volume that references it. Never reads ConfigMaps or Secrets itself. | `MissingConfigMap` / `MissingSecret` |
-| _(planned)_ Unbound PVC | `UnboundPVC` |
+| PVC missing, Pending or Lost: reason taken from the PVC's own events (unknown StorageClass, no default class, provisioner failure). Ignores claims that are only waiting for the pod to be scheduled. | `UnboundPVC` |
 | _(planned)_ Service selector mismatch | `SelectorMismatch` |
 
 ---

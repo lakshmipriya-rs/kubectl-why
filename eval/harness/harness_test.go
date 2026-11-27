@@ -89,8 +89,16 @@ func TestScore(t *testing.T) {
 	t.Run("correct", func(t *testing.T) {
 		out := `{"findings":[{"category":"OOMKilled","detail":"increase the memory limit"}]}`
 		r := score(ScoreResult{}, gt, out)
-		if !r.Passed() || r.FixScore != 2 || r.Score != 1.0 {
+		if !r.Passed() || r.FixScore != 2 || r.Score != 1.0 || len(r.MissingKeywords) != 0 {
 			t.Errorf("unexpected result: %+v", r)
+		}
+	})
+
+	t.Run("missing keywords are listed", func(t *testing.T) {
+		out := `{"findings":[{"category":"OOMKilled","detail":"raise it"}]}`
+		r := score(ScoreResult{}, gt, out)
+		if len(r.MissingKeywords) != 2 || r.MissingKeywords[0] != "memory" || r.MissingKeywords[1] != "limit" {
+			t.Errorf("MissingKeywords = %v, want [memory limit]", r.MissingKeywords)
 		}
 	})
 

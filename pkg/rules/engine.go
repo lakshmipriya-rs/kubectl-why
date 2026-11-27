@@ -23,6 +23,7 @@ var registry = []RuleFunc{
 	CheckProbeFailure,
 	CheckMissingConfigMap,
 	CheckMissingSecret,
+	CheckUnboundPVC,
 	CheckFailedScheduling,
 }
 

@@ -81,7 +81,7 @@ func init() {
 	// Kept so existing scripts don't break; rules-only is the default now.
 	rootCmd.Flags().BoolVar(&f.noLLM, "no-llm", false, "Rules only (now the default)")
 	_ = rootCmd.Flags().MarkDeprecated("no-llm", "rules-only is now the default; use --explain to enable the LLM")
-	rootCmd.Flags().StringVar(&f.output, "output", "text", "Output format: text | json")
+	rootCmd.Flags().StringVarP(&f.output, "output", "o", "text", "Output format: text | json")
 	rootCmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "Path to kubeconfig (defaults to KUBECONFIG env or ~/.kube/config)")
 }
 

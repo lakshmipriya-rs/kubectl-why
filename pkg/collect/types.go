@@ -29,7 +29,13 @@ type PodFacts struct {
 	RelatedConfigMaps []string
 	RelatedSecrets    []string
 
+	// PVCs referenced by the pod's volumes that exist.
 	PVCs []corev1.PersistentVolumeClaim
+	// MissingPVCs are claim names the pod references that don't exist.
+	MissingPVCs []string
+	// PVCEvents holds events about each referenced PVC that is not Bound,
+	// keyed by claim name (e.g. ProvisioningFailed).
+	PVCEvents map[string][]corev1.Event
 
 	// Conditions of the node the pod is assigned to (empty if unscheduled).
 	NodeConditions []corev1.NodeCondition

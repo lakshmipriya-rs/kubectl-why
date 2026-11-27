@@ -191,3 +191,39 @@ func TestCollect_InitContainerLogs(t *testing.T) {
 		t.Errorf("missing previous logs for %q: %v", key, facts.PreviousLogs)
 	}
 }
+
+// A referenced PVC that doesn't exist is recorded; an unbound PVC gets its own
+// events (and only its own, not the pod's or another object's).
+func TestCollect_PVCMissingAndEvents(t *testing.T) {
+	pod := makePod("db-0", "default", corev1.PodPending)
+	pod.Spec.Volumes = []corev1.Volume{
+		{Name: "a", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "pending-claim"}}},
+		{Name: "b", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "ghost"}}},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "pending-claim", Namespace: "default"},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+	pvcEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e-pvc", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "pending-claim"},
+		Reason:         "ProvisioningFailed",
+	}
+	podEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e-pod", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "db-0"},
+		Reason:         "FailedScheduling",
+	}
+	client := fake.NewSimpleClientset(pod, pvc, pvcEvent, podEvent)
+	facts, err := collect.New(client).Collect(context.Background(), "db-0", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.MissingPVCs) != 1 || facts.MissingPVCs[0] != "ghost" {
+		t.Errorf("MissingPVCs = %v, want [ghost]", facts.MissingPVCs)
+	}
+	evts := facts.PVCEvents["pending-claim"]
+	if len(evts) != 1 || evts[0].Reason != "ProvisioningFailed" {
+		t.Errorf("PVCEvents = %+v, want only the ProvisioningFailed event", evts)
+	}
+}

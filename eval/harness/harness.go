@@ -52,6 +52,7 @@ type ScoreResult struct {
 	CategoryCorrect bool
 	FixScore        int // number of fix_keywords present
 	FixTotal        int
+	MissingKeywords []string // fix_keywords not found in the output
 	Hallucinations  []string
 	Score           float64 // 0.0 – 1.0
 	Error           string
@@ -169,6 +170,8 @@ func score(res ScoreResult, gt GroundTruth, output string) ScoreResult {
 	for _, kw := range gt.FixKeywords {
 		if strings.Contains(lower, strings.ToLower(kw)) {
 			res.FixScore++
+		} else {
+			res.MissingKeywords = append(res.MissingKeywords, kw)
 		}
 	}
 
@@ -195,7 +198,7 @@ func score(res ScoreResult, gt GroundTruth, output string) ScoreResult {
 // PrintTable writes a summary table to stdout.
 func PrintTable(results []ScoreResult) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SCENARIO\tRESULT\tCATEGORY_OK\tFIX\tHALLUC\tSCORE\tERROR")
+	fmt.Fprintln(w, "SCENARIO\tRESULT\tCATEGORY_OK\tFIX\tHALLUC\tSCORE\tNOTES")
 	for _, r := range results {
 		result := "PASS"
 		if !r.Passed() {
@@ -209,8 +212,12 @@ func PrintTable(results []ScoreResult) {
 		if len(r.Hallucinations) > 0 {
 			halluc = fmt.Sprintf("%d (%s)", len(r.Hallucinations), strings.Join(r.Hallucinations, ", "))
 		}
+		notes := r.Error
+		if notes == "" && len(r.MissingKeywords) > 0 {
+			notes = "missing keywords: " + strings.Join(r.MissingKeywords, ", ")
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d/%d\t%s\t%.2f\t%s\n",
-			r.Scenario, result, cat, r.FixScore, r.FixTotal, halluc, r.Score, r.Error)
+			r.Scenario, result, cat, r.FixScore, r.FixTotal, halluc, r.Score, notes)
 	}
 	w.Flush()
 }

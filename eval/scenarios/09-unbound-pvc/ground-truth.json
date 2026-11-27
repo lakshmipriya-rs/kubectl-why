@@ -1,0 +1,16 @@
+{
+  "scenario": "09-unbound-pvc",
+  "description": "PVC requests a StorageClass that doesn't exist; claim stays Pending and the pod can't be scheduled",
+  "expected_category": "UnboundPVC",
+  "fix_keywords": ["does-not-exist", "StorageClass", "ProvisioningFailed", "claimName"],
+  "must_not_hallucinate": [
+    "ImagePullBackOff",
+    "CrashLoopBackOff",
+    "MissingConfigMap",
+    "OOMKilled"
+  ],
+  "wait_for": {
+    "pod_phase": "Pending",
+    "event_reason": "FailedScheduling"
+  }
+}
