@@ -75,7 +75,10 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&f.namespace, "namespace", "n", "", "Kubernetes namespace (default: the kubeconfig context's namespace)")
+	// Shared with subcommands (e.g. `mcp`).
+	rootCmd.PersistentFlags().StringVarP(&f.namespace, "namespace", "n", "", "Kubernetes namespace (default: the kubeconfig context's namespace)")
+	rootCmd.PersistentFlags().StringVar(&f.kubeconfig, "kubeconfig", "", "Path to kubeconfig (defaults to KUBECONFIG env or ~/.kube/config)")
+
 	rootCmd.Flags().BoolVar(&f.explain, "explain", false, "Also ask an LLM for an analysis that cites the rule evidence (sends redacted data to the provider)")
 	rootCmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the redacted payload that --explain would send, and exit")
 	rootCmd.Flags().StringVar(&f.provider, "provider", "ollama", "LLM provider for --explain: ollama")
@@ -85,7 +88,6 @@ func init() {
 	rootCmd.Flags().BoolVar(&f.noLLM, "no-llm", false, "Rules only (now the default)")
 	_ = rootCmd.Flags().MarkDeprecated("no-llm", "rules-only is now the default; use --explain to enable the LLM")
 	rootCmd.Flags().StringVarP(&f.output, "output", "o", "text", "Output format: text | json")
-	rootCmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "Path to kubeconfig (defaults to KUBECONFIG env or ~/.kube/config)")
 }
 
 func run(cmd *cobra.Command, args []string) error {

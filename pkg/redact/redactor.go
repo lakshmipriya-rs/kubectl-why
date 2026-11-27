@@ -157,6 +157,9 @@ func Findings(findings []rules.Finding) []rules.Finding {
 	return out
 }
 
+// String replaces credential-like patterns in s with [REDACTED].
+func String(s string) string { return redactString(s) }
+
 // redactString replaces credential-like patterns with [REDACTED].
 func redactString(s string) string {
 	for _, re := range credentialPatterns {

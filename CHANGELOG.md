@@ -5,7 +5,12 @@ Versions follow [Semantic Versioning](https://semver.org/); while the version is
 
 ## [Unreleased]
 
+### Added
+- `kubectl-why mcp`: a Model Context Protocol server for Claude Desktop, Claude Code and other MCP clients, with read-only tools `diagnose`, `list_unhealthy` and `get_events`. Results are redacted and marked as untrusted cluster data; `--allowed-namespaces` limits what can be read.
+
 ### Changed
+- Requires Go 1.25 to build (the MCP SDK needs it; Go 1.24 is out of support).
+- `-n/--namespace` and `--kubeconfig` are accepted by subcommands too.
 - Without `-n`, the namespace now comes from the current kubeconfig context (as with kubectl and `oc project`) instead of always `default`.
 
 ### Internal
