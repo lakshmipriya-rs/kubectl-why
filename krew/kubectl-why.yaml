@@ -3,7 +3,7 @@ kind: Plugin
 metadata:
   name: why
 spec:
-  version: v0.3.0   # updated by goreleaser / release automation
+  version: v0.3.0
   homepage: https://github.com/lakshmipriya-rs/kubectl-why
   shortDescription: Diagnose a failing pod and print a root-cause report
   description: |
@@ -35,7 +35,7 @@ spec:
           os: linux
           arch: amd64
       uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.3.0/kubectl-why_0.3.0_linux_amd64.tar.gz
-      sha256: "PLACEHOLDER_SHA256_linux_amd64"
+      sha256: "7f4e85c1a1fdccd87a94cb1a7f6d55b7ad86113010dfe38f565600a45a0f50ba"
       bin: kubectl-why
 
     - selector:
@@ -43,7 +43,7 @@ spec:
           os: linux
           arch: arm64
       uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.3.0/kubectl-why_0.3.0_linux_arm64.tar.gz
-      sha256: "PLACEHOLDER_SHA256_linux_arm64"
+      sha256: "264d938d51d9259812857498ce5c068c8ef2ef900dcf8627c706370d9e67a44e"
       bin: kubectl-why
 
     - selector:
@@ -51,7 +51,7 @@ spec:
           os: darwin
           arch: amd64
       uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.3.0/kubectl-why_0.3.0_darwin_amd64.tar.gz
-      sha256: "PLACEHOLDER_SHA256_darwin_amd64"
+      sha256: "35f208fbbcbcaa043109930b3e1ac59dc98b5463a86e21f1c6dfe55593cfe0fe"
       bin: kubectl-why
 
     - selector:
@@ -59,7 +59,7 @@ spec:
           os: darwin
           arch: arm64
       uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.3.0/kubectl-why_0.3.0_darwin_arm64.tar.gz
-      sha256: "PLACEHOLDER_SHA256_darwin_arm64"
+      sha256: "d3aebc24829dadfbec16240fbcb63269a38c964be95e6093381ba4ad0e543049"
       bin: kubectl-why
 
     - selector:
@@ -67,5 +67,5 @@ spec:
           os: windows
           arch: amd64
       uri: https://github.com/lakshmipriya-rs/kubectl-why/releases/download/v0.3.0/kubectl-why_0.3.0_windows_amd64.zip
-      sha256: "PLACEHOLDER_SHA256_windows_amd64"
+      sha256: "d28f95ceceaccb3ec0c8cba845b42358c4baa069473893ed56785529718d18d5"
       bin: kubectl-why.exe

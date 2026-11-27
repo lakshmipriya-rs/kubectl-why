@@ -194,18 +194,23 @@ func workloadSelector(ctx context.Context, client kubernetes.Interface, ns strin
 }
 
 // pickPod returns the pod most worth diagnosing and how many pods are unhealthy.
-// Pods are ranked by unhealthiness, then restart count, then newest first.
 func pickPod(pods []corev1.Pod) (corev1.Pod, int) {
 	unhealthy := 0
-	ranked := make([]corev1.Pod, len(pods))
-	copy(ranked, pods)
-	for _, p := range ranked {
-		if unhealthiness(p) > 0 {
+	for _, p := range pods {
+		if IsUnhealthy(p) {
 			unhealthy++
 		}
 	}
-	sort.SliceStable(ranked, func(i, j int) bool {
-		a, b := ranked[i], ranked[j]
+	ranked := append([]corev1.Pod(nil), pods...)
+	SortByUnhealthiness(ranked)
+	return ranked[0], unhealthy
+}
+
+// SortByUnhealthiness sorts pods most clearly failing first, then by restart
+// count, then newest first.
+func SortByUnhealthiness(pods []corev1.Pod) {
+	sort.SliceStable(pods, func(i, j int) bool {
+		a, b := pods[i], pods[j]
 		if ua, ub := unhealthiness(a), unhealthiness(b); ua != ub {
 			return ua > ub
 		}
@@ -214,7 +219,6 @@ func pickPod(pods []corev1.Pod) (corev1.Pod, int) {
 		}
 		return a.CreationTimestamp.After(b.CreationTimestamp.Time)
 	})
-	return ranked[0], unhealthy
 }
 
 // unhealthiness scores how clearly a pod is failing (0 = looks healthy).

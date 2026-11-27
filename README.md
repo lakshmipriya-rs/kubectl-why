@@ -90,7 +90,7 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-n, --namespace` | `default` | Kubernetes namespace |
+| `-n, --namespace` | _(context's namespace)_ | Kubernetes namespace; like kubectl, defaults to the current context's namespace (e.g. set by `oc project`) |
 | `--explain` | `false` | Also ask an LLM for an analysis citing the rule evidence |
 | `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
 | `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |
@@ -103,12 +103,84 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 
 ---
 
+## Use with Claude and other AI assistants (MCP)
+
+`kubectl-why mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server, so an AI assistant can investigate your cluster with kubectl-why's rules and verified evidence. The assistant does the reasoning; kubectl-why supplies the facts. No LLM is configured in kubectl-why itself.
+
+It runs on your machine, uses your kubeconfig and current context like kubectl, and offers three **read-only** tools:
+
+| Tool | What it does |
+|------|--------------|
+| `diagnose` | Diagnose a pod, `deploy/<name>`, `svc/<name>`, … (same rules and evidence as the CLI) |
+| `list_unhealthy` | List failing pods in a namespace, most clearly failing first |
+| `get_events` | Recent events, newest first, optionally for one object or warnings only |
+
+Then ask things like *"Why is deploy/web failing in the shop namespace?"* or *"Which pods are unhealthy in staging, and why?"*
+
+### Claude Code
+
+```bash
+claude mcp add kubectl-why -- kubectl-why mcp
+```
+
+### Claude Desktop
+
+Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop. Use the full path to the binary (`which kubectl-why`):
+
+```json
+{
+  "mcpServers": {
+    "kubectl-why": {
+      "command": "/usr/local/bin/kubectl-why",
+      "args": ["mcp", "--allowed-namespaces", "shop,staging"]
+    }
+  }
+}
+```
+
+On Windows with kubectl-why installed inside WSL, start it through WSL and give the kubeconfig path explicitly (no login shell runs, so `KUBECONFIG` and `PATH` from your shell profile aren't set):
+
+```json
+{
+  "mcpServers": {
+    "kubectl-why": {
+      "command": "wsl.exe",
+      "args": ["-e", "/home/<you>/go/bin/kubectl-why", "mcp", "--kubeconfig", "/home/<you>/.kube/config"]
+    }
+  }
+}
+```
+
+### Other MCP clients
+
+Any client that can start a stdio MCP server works: run `kubectl-why mcp`.
+
+### Safety
+
+- **Read-only.** The tools only read from the cluster, and are annotated as read-only for the client. The RBAC below is enough.
+- **Redacted.** Everything returned (evidence, log lines, event messages) goes through the same redaction as `--dry-run`.
+- **Limit what can be read** with `--allowed-namespaces a,b`. Requests for other namespaces are refused.
+- **Your assistant's provider sees the results.** Whatever the tools return is sent to the AI service your client uses. Only connect clusters whose data you're allowed to share with it.
+- **Cluster data is untrusted.** Log lines and event messages can contain text written by anyone who can run workloads. The server tells the assistant to treat them as data, never as instructions.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--allowed-namespaces` | _(any)_ | Comma-separated namespaces the tools may read |
+| `-n, --namespace` | _(context's namespace)_ | Namespace used when a tool call doesn't name one |
+| `--kubeconfig` | _(standard lookup)_ | Kubeconfig to use |
+
+A pod literally named `mcp` must be written as `kubectl why pod/mcp`.
+
+---
+
 ## Architecture
 
 ```
-kubectl why <pod> | <kind>/<name>
-        │
-        ▼
+kubectl why <pod> | <kind>/<name>      kubectl-why mcp (tools: diagnose, …)
+         │                                   │
+         ├───────────────────────────────────┘
+         │  pkg/diagnose: shared by the CLI and the MCP server
+         ▼
 ┌─────────────────┐
 │   pkg/target    │  pod name, or a workload's unhealthiest pod
 └────────┬────────┘
@@ -270,7 +342,9 @@ See [`eval/README.md`](eval/README.md) for how to run the broken-manifest evalua
 
 - `--suggest-patch`: generate a corrective patch, validate with `kubectl apply --dry-run=server`
 - "what changed": diff between last healthy and current revision
-- MCP server mode: expose collector and rules as tools for AI agents
+- ~~MCP server mode~~ — done in v0.4: `kubectl-why mcp`
+- OpenShift diagnostics: SCC denials, Routes, ImageStreams
+- Causal chains across objects (node pressure → eviction → pending pod)
 - GitHub Action for diagnosing CI failures
 
 ---

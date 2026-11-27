@@ -3,6 +3,19 @@
 All notable changes to kubectl-why are documented here.
 Versions follow [Semantic Versioning](https://semver.org/); while the version is 0.x, minor releases may contain breaking changes.
 
+## [Unreleased]
+
+### Added
+- `kubectl-why mcp`: a Model Context Protocol server for Claude Desktop, Claude Code and other MCP clients, with read-only tools `diagnose`, `list_unhealthy` and `get_events`. Results are redacted and marked as untrusted cluster data; `--allowed-namespaces` limits what can be read.
+
+### Changed
+- Requires Go 1.25 to build (the MCP SDK needs it; Go 1.24 is out of support).
+- `-n/--namespace` and `--kubeconfig` are accepted by subcommands too.
+- Without `-n`, the namespace now comes from the current kubeconfig context (as with kubectl and `oc project`) instead of always `default`.
+
+### Internal
+- The diagnosis pipeline moved from the CLI into `pkg/diagnose`, so the CLI and the upcoming MCP server share it.
+
 ## [0.3.0] - 2026-11-27
 
 First tagged release. kubectl-why diagnoses failing pods, workloads and Services and prints a root-cause report in which every finding cites the exact fields and events it is based on. It runs fully offline by default.
