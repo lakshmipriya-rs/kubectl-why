@@ -69,6 +69,7 @@ All scenarios use only the official `busybox:1.36` image, apart from scenario 01
 | 07 | missing-configmap (as `deploy/config-app`) | `MissingConfigMap` |
 | 08 | missing-secret-volume | `MissingSecret` |
 | 09 | unbound-pvc | `UnboundPVC` |
+| 10 | service-selector (as `svc/web`) | `SelectorMismatch` |
 
 ## Adding a scenario
 

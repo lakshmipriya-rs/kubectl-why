@@ -227,3 +227,18 @@ func TestCollect_PVCMissingAndEvents(t *testing.T) {
 		t.Errorf("PVCEvents = %+v, want only the ProvisioningFailed event", evts)
 	}
 }
+
+func TestCollectService(t *testing.T) {
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default"}}
+	client := fake.NewSimpleClientset(svc, makePod("a", "default", corev1.PodRunning), makePod("b", "other", corev1.PodRunning))
+	sf, err := collect.New(client).CollectService(context.Background(), "web", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sf.Service.Name != "web" || len(sf.Pods) != 1 || sf.Pods[0].Name != "a" {
+		t.Errorf("unexpected facts: service=%v pods=%d", sf.Service.Name, len(sf.Pods))
+	}
+	if _, err := collect.New(client).CollectService(context.Background(), "missing", "default"); err == nil {
+		t.Error("expected error for missing service")
+	}
+}

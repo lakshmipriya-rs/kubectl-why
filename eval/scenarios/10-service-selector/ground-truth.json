@@ -1,0 +1,16 @@
+{
+  "scenario": "10-service-selector",
+  "description": "Healthy pods labeled tier=front; Service selects tier=frontend, so it has no endpoints",
+  "expected_category": "SelectorMismatch",
+  "fix_keywords": ["tier=frontend", "tier=front", "Closest match", "0 of 1 pods"],
+  "must_not_hallucinate": [
+    "NoReadyEndpoints",
+    "ServicePortMismatch",
+    "CrashLoopBackOff",
+    "ImagePullBackOff"
+  ],
+  "target": "svc/web",
+  "wait_for": {
+    "pod_phase": "Running"
+  }
+}

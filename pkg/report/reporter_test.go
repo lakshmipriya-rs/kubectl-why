@@ -171,3 +171,29 @@ func TestReporter_HealthyPod(t *testing.T) {
 		t.Errorf("expected a healthy message without the --explain hint, got:\n%s", buf.String())
 	}
 }
+
+func TestReporter_ServiceHeadersAndHealthy(t *testing.T) {
+	tests := []struct {
+		name string
+		tgt  *target.Target
+		want []string
+	}{
+		{"selects nothing", &target.Target{Kind: target.KindService, Name: "web"},
+			[]string{"Diagnosing Service/web (no pods selected)", "has no selector"}},
+		{"healthy", &target.Target{Kind: target.KindService, Name: "web", Pod: "web-1", PodsTotal: 2},
+			[]string{"Diagnosing Service/web → pod web-1 (0 of 2 pods unhealthy)", `Service "web" selects 2 pod(s) and has ready endpoints`}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := report.New(&buf).Print(report.Result{Target: tc.tgt}, "text"); err != nil {
+				t.Fatal(err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(buf.String(), w) {
+					t.Errorf("expected %q in output, got:\n%s", w, buf.String())
+				}
+			}
+		})
+	}
+}

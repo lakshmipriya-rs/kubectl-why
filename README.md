@@ -70,6 +70,9 @@ kubectl why <pod> [-n namespace]
 kubectl why deploy/web -n shop
 kubectl why sts/postgres
 
+# Diagnose a Service: selector, endpoints and ports, then its unhealthiest pod
+kubectl why svc/web -n shop
+
 # JSON output
 kubectl why mypod --output json
 
@@ -81,7 +84,7 @@ kubectl why mypod --explain --model mistral
 kubectl why mypod --dry-run
 ```
 
-Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs` or `job` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
+Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs`, `job` or `svc` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
 
 ### Flags
 
@@ -120,7 +123,8 @@ kubectl why <pod> | <kind>/<name>
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
 │   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure,
-│                 │  MissingConfigMap, MissingSecret, UnboundPVC
+│                 │  MissingConfigMap, MissingSecret, UnboundPVC;
+│                 │  for Services: SelectorMismatch, NoReadyEndpoints, ServicePortMismatch
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -191,6 +195,9 @@ rules:
   - apiGroups: [""]
     resources: [events]
     verbs: [list]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get]         # kubectl why svc/<name>
   - apiGroups: [apps]
     resources: [deployments, replicasets, statefulsets, daemonsets]
     verbs: [get]
@@ -228,7 +235,9 @@ rules:
 | Failing liveness/readiness/startup probes: probe config shown next to the failure; wrong port, 404 path, timeouts and auth errors explained | `ProbeFailure` |
 | Missing ConfigMap / Secret (or a key in one), from the kubelet's errors: points at the env, envFrom or volume that references it. Never reads ConfigMaps or Secrets itself. | `MissingConfigMap` / `MissingSecret` |
 | PVC missing, Pending or Lost: reason taken from the PVC's own events (unknown StorageClass, no default class, provisioner failure). Ignores claims that are only waiting for the pod to be scheduled. | `UnboundPVC` |
-| _(planned)_ Service selector mismatch | `SelectorMismatch` |
+| `kubectl why svc/<name>`: selector matches no pods; the closest pod and the differing label are named | `SelectorMismatch` |
+| `kubectl why svc/<name>`: selected pods exist but none is Ready (then the pod is diagnosed too) | `NoReadyEndpoints` |
+| `kubectl why svc/<name>`: `targetPort` is not a port the pods declare | `ServicePortMismatch` |
 
 ---
 

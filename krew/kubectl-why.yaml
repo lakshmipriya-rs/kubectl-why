@@ -21,6 +21,9 @@ spec:
       # Diagnose a Deployment (its unhealthiest pod is picked)
       kubectl why deploy/web -n shop
 
+      # Why does my Service have no endpoints? (selector, readiness, ports)
+      kubectl why svc/web -n shop
+
       # Also ask a local LLM (Ollama) for an analysis citing the evidence
       kubectl why mypod -n production --explain
 

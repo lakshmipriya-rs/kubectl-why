@@ -49,10 +49,13 @@ By default no data leaves your machine. Use --explain to also ask an LLM
 (a local Ollama) for a narrative analysis that must cite the rule evidence.
 
 The target is a pod name, or a workload as <kind>/<name>
-(kinds: ` + target.Supported + `). For a workload, its unhealthiest pod is diagnosed.`,
+(kinds: ` + target.Supported + `). For a workload, its unhealthiest pod is diagnosed.
+For a Service, its selector, endpoints and ports are checked, then its
+unhealthiest selected pod is diagnosed.`,
 	Example: `  kubectl why web-7d9f-abcde
   kubectl why deploy/web -n shop
   kubectl why sts/postgres --output json
+  kubectl why svc/web
   kubectl why deploy/web --explain`,
 	// Validate the argument count and the target's format before touching the
 	// cluster, so typos fail fast without needing a reachable cluster.
@@ -112,17 +115,30 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// ── Collect ───────────────────────────────────────────────────────────────
+	// ── Collect + rules ───────────────────────────────────────────────────────
 	collector := collect.New(client)
-	facts, err := collector.Collect(ctx, tgt.Pod, f.namespace)
-	if err != nil {
-		return fmt.Errorf("collecting pod facts: %w", err)
+	var findings []rules.Finding
+
+	// A Service gets its own checks (selector, endpoints, ports) first.
+	if tgt.Kind == target.KindService {
+		sf, err := collector.CollectService(ctx, tgt.Name, f.namespace)
+		if err != nil {
+			return fmt.Errorf("collecting service facts: %w", err)
+		}
+		findings = append(findings, rules.RunServiceRules(sf)...)
 	}
 
-	tgt.PodUnhealthy = target.IsUnhealthy(*facts.Pod)
-
-	// ── Rules ─────────────────────────────────────────────────────────────────
-	findings := rules.RunAll(facts)
+	// Then the pod (for a Service: its unhealthiest selected pod, if any).
+	var facts *collect.PodFacts
+	if tgt.Pod != "" {
+		facts, err = collector.Collect(ctx, tgt.Pod, f.namespace)
+		if err != nil {
+			return fmt.Errorf("collecting pod facts: %w", err)
+		}
+		tgt.PodUnhealthy = target.IsUnhealthy(*facts.Pod)
+		findings = append(findings, rules.RunAll(facts)...)
+	}
+	rules.AssignEvidenceIDs(findings) // one E1…En sequence across Service and pod findings
 
 	// ── Redact ────────────────────────────────────────────────────────────────
 	// Everything that can leave the machine (dry-run payload, LLM prompt) uses
