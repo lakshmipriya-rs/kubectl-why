@@ -1,1 +1,7 @@
 .history
+
+# Build output
+/kubectl-why
+/kubectl-why.exe
+dist/
+coverage.out
