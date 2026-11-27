@@ -52,7 +52,11 @@ func (r *Reporter) printTarget(t *target.Target) {
 		return
 	}
 	if t.Pod == "" {
-		fmt.Fprintf(r.w, "Diagnosing %s/%s (no pods selected)\n", t.Kind, t.Name)
+		what := "no pods"
+		if t.Kind == target.KindService {
+			what = "no pods selected"
+		}
+		fmt.Fprintf(r.w, "Diagnosing %s/%s (%s)\n", t.Kind, t.Name, what)
 		return
 	}
 	fmt.Fprintf(r.w, "Diagnosing %s/%s → pod %s (%d of %d pods unhealthy)\n",
@@ -67,6 +71,10 @@ func healthyMessage(t *target.Target) (string, bool) {
 	case t.Kind == target.KindService && t.Pod == "":
 		// No findings and no pods: the Service has no selector.
 		return fmt.Sprintf("Service %q has no selector: its endpoints are managed manually, so there are no pods to check.", t.Name), true
+	case t.Pod == "":
+		// A Deployment with no pods and no finding explaining it.
+		return fmt.Sprintf("%s %q has no pods and no rule found a reason. It may be scaled to 0 replicas (kubectl get %s %s).",
+			t.Kind, t.Name, strings.ToLower(string(t.Kind)), t.Name), true
 	case t.PodUnhealthy:
 		return "", false
 	case t.Kind == target.KindService:

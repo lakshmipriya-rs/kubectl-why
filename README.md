@@ -84,7 +84,7 @@ kubectl why mypod --explain --model mistral
 kubectl why mypod --dry-run
 ```
 
-Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs`, `job` or `svc` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
+Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs`, `job` or `svc` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. For a Deployment, rollout problems are checked too: pods that can't be created (quota, Pod Security, OpenShift SCC…) and rollouts stuck past their deadline. Other workloads with **no pods** are reported as an error that points at quota or admission problems.
 
 ### Flags
 
@@ -124,7 +124,8 @@ kubectl why <pod> | <kind>/<name>
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
 │   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure,
 │                 │  MissingConfigMap, MissingSecret, UnboundPVC;
-│                 │  for Services: SelectorMismatch, NoReadyEndpoints, ServicePortMismatch
+│                 │  for Services: SelectorMismatch, NoReadyEndpoints, ServicePortMismatch;
+│                 │  for Deployments: ReplicaFailure, RolloutStuck
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -201,6 +202,9 @@ rules:
   - apiGroups: [apps]
     resources: [deployments, replicasets, statefulsets, daemonsets]
     verbs: [get]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [list]        # a Deployment's ReplicaSets (rollout checks)
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [get]
@@ -238,6 +242,9 @@ rules:
 | `kubectl why svc/<name>`: selector matches no pods; the closest pod and the differing label are named | `SelectorMismatch` |
 | `kubectl why svc/<name>`: selected pods exist but none is Ready (then the pod is diagnosed too) | `NoReadyEndpoints` |
 | `kubectl why svc/<name>`: `targetPort` is not a port the pods declare | `ServicePortMismatch` |
+| `kubectl why deploy/<name>`: pods can't be created (ResourceQuota, Pod Security, OpenShift SCC, LimitRange, webhook, missing ServiceAccount), from the ReplicaSet's `FailedCreate` events | `ReplicaFailure` |
+| `kubectl why deploy/<name>`: rollout exceeded its progress deadline; new vs old ReplicaSet pods shown, rollback command suggested | `RolloutStuck` |
+| `FailedScheduling` with insufficient CPU/memory now also shows the pod's requests | `FailedScheduling` |
 
 ---
 

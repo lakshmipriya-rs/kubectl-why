@@ -1,0 +1,41 @@
+---
+# Scenario 11: ReplicaSet can't create pods because of a ResourceQuota
+# The namespace allows only 1 pod, but the Deployment wants 2. The first pod
+# runs fine; the second is rejected at creation, so it never exists and no
+# pod-level signal explains it. The reason is a FailedCreate event on the
+# ReplicaSet. kubectl-why deploy/api should report ReplicaFailure (quota).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: pod-limit
+spec:
+  hard:
+    pods: "1"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load`
+          command: ["sleep", "3600"]
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "64Mi"

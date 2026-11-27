@@ -127,6 +127,14 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 		findings = append(findings, rules.RunServiceRules(sf)...)
 	}
+	// A Deployment gets rollout checks (pod creation failures, stuck rollouts).
+	if tgt.Kind == target.KindDeployment {
+		df, err := collector.CollectDeployment(ctx, tgt.Name, f.namespace)
+		if err != nil {
+			return fmt.Errorf("collecting deployment facts: %w", err)
+		}
+		findings = append(findings, rules.RunDeploymentRules(df)...)
+	}
 
 	// Then the pod (for a Service: its unhealthiest selected pod, if any).
 	var facts *collect.PodFacts

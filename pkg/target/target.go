@@ -49,7 +49,7 @@ type Target struct {
 	Kind Kind   `json:"kind"`
 	Name string `json:"name"`
 	// Pod is the pod chosen for diagnosis. Equal to Name when Kind is Pod.
-	// Empty for a Service that selects no pods.
+	// Empty for a Service or Deployment that has no pods.
 	Pod string `json:"pod"`
 	// PodsTotal and PodsUnhealthy are only set for workloads.
 	PodsTotal     int `json:"pods_total,omitempty"`
@@ -120,8 +120,10 @@ func Resolve(ctx context.Context, client kubernetes.Interface, namespace, arg st
 		return t, fmt.Errorf("listing pods for %s/%s: %w", kind, name, err)
 	}
 	if len(pods.Items) == 0 {
-		if kind == KindService {
-			return t, nil // selecting no pods is itself the diagnosis (see service rules)
+		if kind == KindService || kind == KindDeployment {
+			// Diagnosed by the Service/Deployment rules (e.g. selector
+			// mismatch, or pod creation rejected by a quota).
+			return t, nil
 		}
 		return t, fmt.Errorf("%s/%s has no pods (selector %q). Pods may be failing to be created, "+
 			"e.g. by a ResourceQuota or an admission policy: check `kubectl describe %s/%s -n %s` "+

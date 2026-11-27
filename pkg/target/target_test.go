@@ -146,9 +146,21 @@ func TestResolve_AllHealthyPicksMostRestartedThenNewest(t *testing.T) {
 }
 
 func TestResolve_WorkloadWithNoPods(t *testing.T) {
-	_, err := resolve(t, "deploy/web", deployment("web", webLabels))
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns"},
+		Spec:       appsv1.StatefulSetSpec{Selector: &metav1.LabelSelector{MatchLabels: webLabels}},
+	}
+	_, err := resolve(t, "sts/db", sts)
 	if err == nil || !strings.Contains(err.Error(), "has no pods") {
 		t.Fatalf("expected 'has no pods' error, got %v", err)
+	}
+}
+
+// A Deployment with no pods is diagnosed by the Deployment rules instead.
+func TestResolve_DeploymentWithNoPodsIsNotAnError(t *testing.T) {
+	got, err := resolve(t, "deploy/web", deployment("web", webLabels))
+	if err != nil || got.Pod != "" || got.Kind != KindDeployment {
+		t.Fatalf("got %+v, %v; want Deployment target without pod and no error", got, err)
 	}
 }
 

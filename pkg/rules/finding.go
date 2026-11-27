@@ -18,6 +18,8 @@ const (
 	CategorySelectorMismatch    = "SelectorMismatch"
 	CategoryNoReadyEndpoints    = "NoReadyEndpoints"
 	CategoryServicePortMismatch = "ServicePortMismatch"
+	CategoryReplicaFailure      = "ReplicaFailure"
+	CategoryRolloutStuck        = "RolloutStuck"
 )
 
 // Finding is a structured diagnostic result from the rule engine.

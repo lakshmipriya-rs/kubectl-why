@@ -197,3 +197,16 @@ func TestReporter_ServiceHeadersAndHealthy(t *testing.T) {
 		})
 	}
 }
+
+func TestReporter_DeploymentWithoutPods(t *testing.T) {
+	var buf bytes.Buffer
+	tgt := &target.Target{Kind: target.KindDeployment, Name: "web"}
+	if err := report.New(&buf).Print(report.Result{Target: tgt}, "text"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Diagnosing Deployment/web (no pods)", "may be scaled to 0 replicas"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("expected %q in output, got:\n%s", want, buf.String())
+		}
+	}
+}

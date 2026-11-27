@@ -70,6 +70,7 @@ All scenarios use only the official `busybox:1.36` image, apart from scenario 01
 | 08 | missing-secret-volume | `MissingSecret` |
 | 09 | unbound-pvc | `UnboundPVC` |
 | 10 | service-selector (as `svc/web`) | `SelectorMismatch` |
+| 11 | quota-failedcreate (as `deploy/api`) | `ReplicaFailure` |
 
 ## Adding a scenario
 

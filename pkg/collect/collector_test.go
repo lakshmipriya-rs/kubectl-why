@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -240,5 +241,40 @@ func TestCollectService(t *testing.T) {
 	}
 	if _, err := collect.New(client).CollectService(context.Background(), "missing", "default"); err == nil {
 		t.Error("expected error for missing service")
+	}
+}
+
+// Only ReplicaSets controlled by the Deployment are kept, and FailedCreate
+// events are fetched for the ones that should have pods.
+func TestCollectDeployment(t *testing.T) {
+	sel := map[string]string{"app": "web"}
+	d := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default", UID: "d-uid"},
+		Spec:       appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: sel}},
+	}
+	isController := true
+	owned := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "web-1", Namespace: "default", Labels: sel,
+			OwnerReferences: []metav1.OwnerReference{{UID: "d-uid", Controller: &isController}},
+		},
+		Spec: appsv1.ReplicaSetSpec{Replicas: func() *int32 { n := int32(2); return &n }()},
+	}
+	stranger := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "other-rs", Namespace: "default", Labels: sel}}
+	evt := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e1", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "ReplicaSet", Name: "web-1"},
+		Reason:         "FailedCreate",
+	}
+	client := fake.NewSimpleClientset(d, owned, stranger, evt)
+	df, err := collect.New(client).CollectDeployment(context.Background(), "web", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(df.ReplicaSets) != 1 || df.ReplicaSets[0].Name != "web-1" {
+		t.Errorf("ReplicaSets = %v, want only web-1", df.ReplicaSets)
+	}
+	if evts := df.ReplicaSetEvents["web-1"]; len(evts) != 1 || evts[0].Reason != "FailedCreate" {
+		t.Errorf("ReplicaSetEvents[web-1] = %+v", evts)
 	}
 }
