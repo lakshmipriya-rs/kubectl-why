@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -171,5 +172,109 @@ func TestCollect_NodeConditions_UnscheduledPod(t *testing.T) {
 	}
 	if len(facts.NodeConditions) != 0 {
 		t.Errorf("expected no node conditions for unscheduled pod, got %v", facts.NodeConditions)
+	}
+}
+
+// Init containers get both current and previous logs, under "init:<name>".
+func TestCollect_InitContainerLogs(t *testing.T) {
+	pod := makePod("initpod", "default", corev1.PodPending)
+	pod.Spec.InitContainers = []corev1.Container{{Name: "migrate", Image: "busybox"}}
+	client := fake.NewSimpleClientset(pod)
+	facts, err := collect.New(client).Collect(context.Background(), "initpod", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := collect.InitLogKey("migrate")
+	if _, ok := facts.CurrentLogs[key]; !ok {
+		t.Errorf("missing current logs for %q: %v", key, facts.CurrentLogs)
+	}
+	if _, ok := facts.PreviousLogs[key]; !ok {
+		t.Errorf("missing previous logs for %q: %v", key, facts.PreviousLogs)
+	}
+}
+
+// A referenced PVC that doesn't exist is recorded; an unbound PVC gets its own
+// events (and only its own, not the pod's or another object's).
+func TestCollect_PVCMissingAndEvents(t *testing.T) {
+	pod := makePod("db-0", "default", corev1.PodPending)
+	pod.Spec.Volumes = []corev1.Volume{
+		{Name: "a", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "pending-claim"}}},
+		{Name: "b", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "ghost"}}},
+	}
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "pending-claim", Namespace: "default"},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+	pvcEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e-pvc", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "pending-claim"},
+		Reason:         "ProvisioningFailed",
+	}
+	podEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e-pod", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "db-0"},
+		Reason:         "FailedScheduling",
+	}
+	client := fake.NewSimpleClientset(pod, pvc, pvcEvent, podEvent)
+	facts, err := collect.New(client).Collect(context.Background(), "db-0", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.MissingPVCs) != 1 || facts.MissingPVCs[0] != "ghost" {
+		t.Errorf("MissingPVCs = %v, want [ghost]", facts.MissingPVCs)
+	}
+	evts := facts.PVCEvents["pending-claim"]
+	if len(evts) != 1 || evts[0].Reason != "ProvisioningFailed" {
+		t.Errorf("PVCEvents = %+v, want only the ProvisioningFailed event", evts)
+	}
+}
+
+func TestCollectService(t *testing.T) {
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default"}}
+	client := fake.NewSimpleClientset(svc, makePod("a", "default", corev1.PodRunning), makePod("b", "other", corev1.PodRunning))
+	sf, err := collect.New(client).CollectService(context.Background(), "web", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sf.Service.Name != "web" || len(sf.Pods) != 1 || sf.Pods[0].Name != "a" {
+		t.Errorf("unexpected facts: service=%v pods=%d", sf.Service.Name, len(sf.Pods))
+	}
+	if _, err := collect.New(client).CollectService(context.Background(), "missing", "default"); err == nil {
+		t.Error("expected error for missing service")
+	}
+}
+
+// Only ReplicaSets controlled by the Deployment are kept, and FailedCreate
+// events are fetched for the ones that should have pods.
+func TestCollectDeployment(t *testing.T) {
+	sel := map[string]string{"app": "web"}
+	d := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "default", UID: "d-uid"},
+		Spec:       appsv1.DeploymentSpec{Selector: &metav1.LabelSelector{MatchLabels: sel}},
+	}
+	isController := true
+	owned := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "web-1", Namespace: "default", Labels: sel,
+			OwnerReferences: []metav1.OwnerReference{{UID: "d-uid", Controller: &isController}},
+		},
+		Spec: appsv1.ReplicaSetSpec{Replicas: func() *int32 { n := int32(2); return &n }()},
+	}
+	stranger := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "other-rs", Namespace: "default", Labels: sel}}
+	evt := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "e1", Namespace: "default"},
+		InvolvedObject: corev1.ObjectReference{Kind: "ReplicaSet", Name: "web-1"},
+		Reason:         "FailedCreate",
+	}
+	client := fake.NewSimpleClientset(d, owned, stranger, evt)
+	df, err := collect.New(client).CollectDeployment(context.Background(), "web", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(df.ReplicaSets) != 1 || df.ReplicaSets[0].Name != "web-1" {
+		t.Errorf("ReplicaSets = %v, want only web-1", df.ReplicaSets)
+	}
+	if evts := df.ReplicaSetEvents["web-1"]; len(evts) != 1 || evts[0].Reason != "FailedCreate" {
+		t.Errorf("ReplicaSetEvents[web-1] = %+v", evts)
 	}
 }

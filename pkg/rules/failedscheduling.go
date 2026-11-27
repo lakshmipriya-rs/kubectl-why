@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/collect"
 )
@@ -46,6 +47,23 @@ func CheckFailedScheduling(facts *collect.PodFacts) *Finding {
 		return nil
 	}
 
+	// "Insufficient cpu/memory": show what the pod asks for.
+	joined := strings.ToLower(evidenceValues(evidence))
+	for _, res := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		if !strings.Contains(joined, "insufficient "+string(res)) {
+			continue
+		}
+		for _, c := range facts.Pod.Spec.Containers {
+			if q, ok := c.Resources.Requests[res]; ok {
+				evidence = append(evidence, Evidence{
+					Source: podSource(facts.Pod),
+					Field:  fmt.Sprintf("%s.resources.requests.%s", specField(false, c.Name), res),
+					Value:  formatQuantity(res, q),
+				})
+			}
+		}
+	}
+
 	detail := buildSchedulingDetail(evidence)
 
 	return &Finding{
@@ -59,12 +77,7 @@ func CheckFailedScheduling(facts *collect.PodFacts) *Finding {
 // buildSchedulingDetail parses common scheduling error phrases to produce
 // a more actionable detail string.
 func buildSchedulingDetail(evidence []Evidence) string {
-	var sb strings.Builder
-	for _, e := range evidence {
-		sb.WriteString(e.Value)
-		sb.WriteString(" ")
-	}
-	lower := strings.ToLower(sb.String())
+	lower := strings.ToLower(evidenceValues(evidence))
 
 	switch {
 	case strings.Contains(lower, "insufficient cpu"):
@@ -80,4 +93,22 @@ func buildSchedulingDetail(evidence []Evidence) string {
 	default:
 		return "Pod is stuck in Pending due to scheduling failure. See Evidence for details."
 	}
+}
+
+func evidenceValues(evidence []Evidence) string {
+	var sb strings.Builder
+	for _, e := range evidence {
+		sb.WriteString(e.Value)
+		sb.WriteString(" ")
+	}
+	return sb.String()
+}
+
+// formatQuantity shows whole CPU cores as plain numbers ("1000", not "1k")
+// and everything else in Kubernetes notation ("500m", "64Mi").
+func formatQuantity(res corev1.ResourceName, q resource.Quantity) string {
+	if res == corev1.ResourceCPU && q.MilliValue()%1000 == 0 {
+		return fmt.Sprintf("%d", q.MilliValue()/1000)
+	}
+	return q.String()
 }

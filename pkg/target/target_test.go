@@ -34,7 +34,9 @@ func TestParse(t *testing.T) {
 		{"rs/web-abc", KindReplicaSet, "web-abc", false},
 		{"job/migrate", KindJob, "migrate", false},
 		{"jobs.batch/migrate", KindJob, "migrate", false},
-		{"svc/web", "", "", true},
+		{"svc/web", KindService, "web", false},
+		{"service/web", KindService, "web", false},
+		{"ingress/web", "", "", true},
 		{"deploy/", "", "", true},
 		{"deploy/a/b", "", "", true},
 		{"", "", "", true},
@@ -144,9 +146,21 @@ func TestResolve_AllHealthyPicksMostRestartedThenNewest(t *testing.T) {
 }
 
 func TestResolve_WorkloadWithNoPods(t *testing.T) {
-	_, err := resolve(t, "deploy/web", deployment("web", webLabels))
+	sts := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "db", Namespace: "ns"},
+		Spec:       appsv1.StatefulSetSpec{Selector: &metav1.LabelSelector{MatchLabels: webLabels}},
+	}
+	_, err := resolve(t, "sts/db", sts)
 	if err == nil || !strings.Contains(err.Error(), "has no pods") {
 		t.Fatalf("expected 'has no pods' error, got %v", err)
+	}
+}
+
+// A Deployment with no pods is diagnosed by the Deployment rules instead.
+func TestResolve_DeploymentWithNoPodsIsNotAnError(t *testing.T) {
+	got, err := resolve(t, "deploy/web", deployment("web", webLabels))
+	if err != nil || got.Pod != "" || got.Kind != KindDeployment {
+		t.Fatalf("got %+v, %v; want Deployment target without pod and no error", got, err)
 	}
 }
 
@@ -208,5 +222,43 @@ func TestIsUnhealthy(t *testing.T) {
 	}
 	if !IsUnhealthy(corev1.Pod{Status: waiting("CrashLoopBackOff")}) {
 		t.Error("crash-looping pod should be unhealthy")
+	}
+}
+
+func svcObj(selector map[string]string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "ns"},
+		Spec:       corev1.ServiceSpec{Selector: selector},
+	}
+}
+
+// A Service that selects nothing is not an error: that is the diagnosis.
+func TestResolve_ServiceSelectingNothing(t *testing.T) {
+	got, err := resolve(t, "svc/web", svcObj(webLabels),
+		pod("other", map[string]string{"app": "other"}, time.Hour, running(0)))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Kind != KindService || got.Pod != "" || got.PodsTotal != 0 {
+		t.Errorf("unexpected target %+v", got)
+	}
+}
+
+func TestResolve_ServiceWithoutSelector(t *testing.T) {
+	got, err := resolve(t, "svc/web", svcObj(nil))
+	if err != nil || got.Pod != "" {
+		t.Fatalf("got %+v, %v; want no pod and no error", got, err)
+	}
+}
+
+func TestResolve_ServicePicksUnhealthiestPod(t *testing.T) {
+	got, err := resolve(t, "svc/web", svcObj(webLabels),
+		pod("web-ok", webLabels, time.Hour, running(0)),
+		pod("web-bad", webLabels, time.Hour, waiting("CrashLoopBackOff")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Pod != "web-bad" || got.PodsTotal != 2 || got.PodsUnhealthy != 1 {
+		t.Errorf("unexpected target %+v", got)
 	}
 }

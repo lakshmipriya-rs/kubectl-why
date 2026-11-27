@@ -1,0 +1,42 @@
+---
+# Scenario 09: PVC requests a StorageClass that doesn't exist
+# The claim can never be provisioned, so it stays Pending, and the pod that
+# mounts it can't be scheduled. The pod's own events only say "unbound
+# PersistentVolumeClaims"; the real reason is on the PVC's events.
+# kubectl-why should report UnboundPVC naming the missing StorageClass.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+spec:
+  storageClassName: does-not-exist
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: db
+  labels:
+    app: db
+spec:
+  containers:
+    - name: db
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load`
+      command: ["sleep", "3600"]
+      volumeMounts:
+        - name: storage
+          mountPath: /var/lib/data
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "16Mi"
+        limits:
+          memory: "64Mi"
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: data

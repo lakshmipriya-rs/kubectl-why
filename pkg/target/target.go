@@ -26,6 +26,7 @@ const (
 	KindDaemonSet   Kind = "DaemonSet"
 	KindReplicaSet  Kind = "ReplicaSet"
 	KindJob         Kind = "Job"
+	KindService     Kind = "Service"
 )
 
 // aliases maps the names kubectl accepts (singular, plural, short) to a Kind.
@@ -36,10 +37,11 @@ var aliases = map[string]Kind{
 	"daemonset": KindDaemonSet, "daemonsets": KindDaemonSet, "ds": KindDaemonSet,
 	"replicaset": KindReplicaSet, "replicasets": KindReplicaSet, "rs": KindReplicaSet,
 	"job": KindJob, "jobs": KindJob,
+	"service": KindService, "services": KindService, "svc": KindService,
 }
 
 // Supported lists the accepted kinds for help and error messages.
-const Supported = "pod, deploy, sts, ds, rs, job"
+const Supported = "pod, deploy, sts, ds, rs, job, svc"
 
 // Target describes what is being diagnosed.
 type Target struct {
@@ -47,6 +49,7 @@ type Target struct {
 	Kind Kind   `json:"kind"`
 	Name string `json:"name"`
 	// Pod is the pod chosen for diagnosis. Equal to Name when Kind is Pod.
+	// Empty for a Service or Deployment that has no pods.
 	Pod string `json:"pod"`
 	// PodsTotal and PodsUnhealthy are only set for workloads.
 	PodsTotal     int `json:"pods_total,omitempty"`
@@ -106,6 +109,9 @@ func Resolve(ctx context.Context, client kubernetes.Interface, namespace, arg st
 		return t, fmt.Errorf("%s/%s has an invalid selector: %w", kind, name, err)
 	}
 	if sel.Empty() {
+		if kind == KindService {
+			return t, nil // a Service without selector (manual endpoints): no pod to diagnose
+		}
 		return t, fmt.Errorf("%s/%s has an empty selector", kind, name)
 	}
 
@@ -114,6 +120,11 @@ func Resolve(ctx context.Context, client kubernetes.Interface, namespace, arg st
 		return t, fmt.Errorf("listing pods for %s/%s: %w", kind, name, err)
 	}
 	if len(pods.Items) == 0 {
+		if kind == KindService || kind == KindDeployment {
+			// Diagnosed by the Service/Deployment rules (e.g. selector
+			// mismatch, or pod creation rejected by a quota).
+			return t, nil
+		}
 		return t, fmt.Errorf("%s/%s has no pods (selector %q). Pods may be failing to be created, "+
 			"e.g. by a ResourceQuota or an admission policy: check `kubectl describe %s/%s -n %s` "+
 			"and the events of its controller", kind, name, sel.String(), strings.ToLower(string(kind)), name, namespace)
@@ -162,6 +173,12 @@ func workloadSelector(ctx context.Context, client kubernetes.Interface, ns strin
 		j, e := client.BatchV1().Jobs(ns).Get(ctx, name, get)
 		if e == nil {
 			sel = j.Spec.Selector
+		}
+		err = e
+	case KindService:
+		s, e := client.CoreV1().Services(ns).Get(ctx, name, get)
+		if e == nil {
+			sel = &metav1.LabelSelector{MatchLabels: s.Spec.Selector}
 		}
 		err = e
 	default:

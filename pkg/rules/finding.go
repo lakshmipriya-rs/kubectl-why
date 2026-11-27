@@ -6,16 +6,20 @@ import "fmt"
 
 // Category names for deterministic findings.
 const (
-	CategoryImagePullBackOff = "ImagePullBackOff"
-	CategoryOOMKilled        = "OOMKilled"
-	CategorySIGKILL          = "SIGKILL"
-	CategoryFailedScheduling = "FailedScheduling"
-	CategoryCrashLoopBackOff = "CrashLoopBackOff"
-	CategoryProbeFailure     = "ProbeFailure"
-	CategoryMissingConfigMap = "MissingConfigMap"
-	CategoryMissingSecret    = "MissingSecret"
-	CategoryUnboundPVC       = "UnboundPVC"
-	CategorySelectorMismatch = "SelectorMismatch"
+	CategoryImagePullBackOff    = "ImagePullBackOff"
+	CategoryOOMKilled           = "OOMKilled"
+	CategorySIGKILL             = "SIGKILL"
+	CategoryFailedScheduling    = "FailedScheduling"
+	CategoryCrashLoopBackOff    = "CrashLoopBackOff"
+	CategoryProbeFailure        = "ProbeFailure"
+	CategoryMissingConfigMap    = "MissingConfigMap"
+	CategoryMissingSecret       = "MissingSecret"
+	CategoryUnboundPVC          = "UnboundPVC"
+	CategorySelectorMismatch    = "SelectorMismatch"
+	CategoryNoReadyEndpoints    = "NoReadyEndpoints"
+	CategoryServicePortMismatch = "ServicePortMismatch"
+	CategoryReplicaFailure      = "ReplicaFailure"
+	CategoryRolloutStuck        = "RolloutStuck"
 )
 
 // Finding is a structured diagnostic result from the rule engine.

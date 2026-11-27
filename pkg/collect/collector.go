@@ -9,6 +9,7 @@ import (
 	"io"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -56,10 +57,14 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 		prevLogs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, true, tailLines)
 		facts.PreviousLogs[cs.Name] = prevLogs
 	}
-	// Init containers too.
+	// Init containers too (keyed "init:<name>"). Previous logs matter when an
+	// init container is crash-looping.
 	for _, cs := range pod.Spec.InitContainers {
 		logs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, false, tailLines)
-		facts.CurrentLogs["init:"+cs.Name] = logs
+		facts.CurrentLogs[InitLogKey(cs.Name)] = logs
+
+		prevLogs, _ := c.fetchLogs(ctx, namespace, podName, cs.Name, true, tailLines)
+		facts.PreviousLogs[InitLogKey(cs.Name)] = prevLogs
 	}
 
 	// ── Owner chain ───────────────────────────────────────────────────────────
@@ -68,15 +73,26 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 	// ── Related CM / Secret names (no contents) ───────────────────────────────
 	facts.RelatedConfigMaps, facts.RelatedSecrets = extractRefNames(pod)
 
-	// ── PVCs ─────────────────────────────────────────────────────────────────
+	// ── PVCs (+ events for claims that aren't Bound) ──────────────────────────
 	for _, vol := range pod.Spec.Volumes {
-		if vol.PersistentVolumeClaim != nil {
-			pvc, err := c.client.CoreV1().PersistentVolumeClaims(namespace).Get(
-				ctx, vol.PersistentVolumeClaim.ClaimName, metav1.GetOptions{})
-			if err == nil {
-				facts.PVCs = append(facts.PVCs, *pvc)
+		if vol.PersistentVolumeClaim == nil {
+			continue
+		}
+		name := vol.PersistentVolumeClaim.ClaimName
+		pvc, err := c.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, metav1.GetOptions{})
+		switch {
+		case apierrors.IsNotFound(err):
+			facts.MissingPVCs = append(facts.MissingPVCs, name)
+		case err == nil:
+			facts.PVCs = append(facts.PVCs, *pvc)
+			if pvc.Status.Phase != corev1.ClaimBound {
+				if facts.PVCEvents == nil {
+					facts.PVCEvents = map[string][]corev1.Event{}
+				}
+				facts.PVCEvents[name] = c.objectEvents(ctx, namespace, "PersistentVolumeClaim", name)
 			}
 		}
+		// Other errors (e.g. forbidden) are skipped: absence of evidence, not a finding.
 	}
 
 	// ── Node conditions (only once the pod is assigned to a node) ─────────────
@@ -90,6 +106,27 @@ func (c *Collector) Collect(ctx context.Context, podName, namespace string) (*Po
 
 	return facts, nil
 }
+
+// objectEvents lists events about one object. Results are filtered by kind
+// and name in code as well, so a pod and a PVC with the same name never mix.
+func (c *Collector) objectEvents(ctx context.Context, namespace, kind, name string) []corev1.Event {
+	list, err := c.client.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("involvedObject.kind=%s,involvedObject.name=%s", kind, name),
+	})
+	if err != nil {
+		return nil
+	}
+	var out []corev1.Event
+	for _, e := range list.Items {
+		if e.InvolvedObject.Kind == kind && e.InvolvedObject.Name == name {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// InitLogKey is the CurrentLogs/PreviousLogs key for an init container.
+func InitLogKey(name string) string { return "init:" + name }
 
 // fetchLogs retrieves up to tailLines from the named container.
 func (c *Collector) fetchLogs(ctx context.Context, namespace, pod, container string, previous bool, tailLines int64) (string, error) {

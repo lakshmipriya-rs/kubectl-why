@@ -38,8 +38,7 @@ func (r *Reporter) Print(result Result, format string) error {
 		return enc.Encode(result)
 	default:
 		r.printTarget(result.Target)
-		podHealthy := result.Target != nil && !result.Target.PodUnhealthy
-		return r.printText(result.Findings, result.LLM, podHealthy)
+		return r.printText(result.Findings, result.LLM, result.Target)
 	}
 }
 
@@ -52,17 +51,45 @@ func (r *Reporter) printTarget(t *target.Target) {
 		fmt.Fprintf(r.w, "Diagnosing Pod/%s\n", t.Pod)
 		return
 	}
+	if t.Pod == "" {
+		what := "no pods"
+		if t.Kind == target.KindService {
+			what = "no pods selected"
+		}
+		fmt.Fprintf(r.w, "Diagnosing %s/%s (%s)\n", t.Kind, t.Name, what)
+		return
+	}
 	fmt.Fprintf(r.w, "Diagnosing %s/%s → pod %s (%d of %d pods unhealthy)\n",
 		t.Kind, t.Name, t.Pod, t.PodsUnhealthy, t.PodsTotal)
 }
 
-// podHealthy is true when the diagnosed pod shows no sign of failing.
-func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response, podHealthy bool) error {
+// healthyMessage returns the all-clear message for t, if it looks healthy.
+func healthyMessage(t *target.Target) (string, bool) {
+	switch {
+	case t == nil:
+		return "", false
+	case t.Kind == target.KindService && t.Pod == "":
+		// No findings and no pods: the Service has no selector.
+		return fmt.Sprintf("Service %q has no selector: its endpoints are managed manually, so there are no pods to check.", t.Name), true
+	case t.Pod == "":
+		// A Deployment with no pods and no finding explaining it.
+		return fmt.Sprintf("%s %q has no pods and no rule found a reason. It may be scaled to 0 replicas (kubectl get %s %s).",
+			t.Kind, t.Name, strings.ToLower(string(t.Kind)), t.Name), true
+	case t.PodUnhealthy:
+		return "", false
+	case t.Kind == target.KindService:
+		return fmt.Sprintf("✅ Service %q selects %d pod(s) and has ready endpoints. No problems detected.", t.Name, t.PodsTotal), true
+	default:
+		return "✅ The pod looks healthy: running, ready, no restarts. No problems detected.", true
+	}
+}
+
+func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response, t *target.Target) error {
 	hr := strings.Repeat("─", 60)
 
 	if len(findings) == 0 && (resp == nil || resp.RootCause == "") {
-		if podHealthy {
-			fmt.Fprintln(r.w, "✅ The pod looks healthy: running, ready, no restarts. No problems detected.")
+		if msg, ok := healthyMessage(t); ok {
+			fmt.Fprintln(r.w, msg)
 			return nil
 		}
 		fmt.Fprintln(r.w, "No problems detected by the rule engine.")

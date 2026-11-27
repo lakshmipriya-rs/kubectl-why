@@ -17,8 +17,13 @@ type RuleFunc func(facts *collect.PodFacts) *Finding
 // registry holds all registered rules in priority order.
 var registry = []RuleFunc{
 	CheckImagePullBackOff,
+	CheckCrashLoopBackOff,
 	CheckOOMKilled,
 	CheckSIGKILL,
+	CheckProbeFailure,
+	CheckMissingConfigMap,
+	CheckMissingSecret,
+	CheckUnboundPVC,
 	CheckFailedScheduling,
 }
 

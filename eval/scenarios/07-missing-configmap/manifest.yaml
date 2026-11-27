@@ -1,0 +1,35 @@
+---
+# Scenario 07: Missing ConfigMap referenced through envFrom
+# The container loads its environment from ConfigMap "app-config", which was
+# never created. The kubelet can't build the container: CreateContainerConfigError.
+# kubectl-why should report MissingConfigMap and point at the envFrom reference.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-app
+  labels:
+    app: config-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-app
+  template:
+    metadata:
+      labels:
+        app: config-app
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load`
+          command: ["sleep", "3600"]
+          envFrom:
+            - configMapRef:
+                name: app-config   # does not exist
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "64Mi"

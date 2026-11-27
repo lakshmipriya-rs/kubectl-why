@@ -1,0 +1,16 @@
+{
+  "scenario": "07-missing-configmap",
+  "description": "envFrom references a ConfigMap that doesn't exist; CreateContainerConfigError",
+  "expected_category": "MissingConfigMap",
+  "fix_keywords": ["app-config", "does not exist", "envFrom"],
+  "must_not_hallucinate": [
+    "MissingSecret",
+    "ImagePullBackOff",
+    "CrashLoopBackOff",
+    "OOMKilled"
+  ],
+  "target": "deploy/config-app",
+  "wait_for": {
+    "container_waiting_reason": "CreateContainerConfigError"
+  }
+}

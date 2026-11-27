@@ -1,0 +1,50 @@
+---
+# Scenario 10: Service selector doesn't match the pods
+# The web pods run fine and are Ready, but they are labeled tier=front while the
+# Service selects tier=frontend. The Service has no endpoints, so traffic fails,
+# even though every pod is healthy.
+# kubectl-why svc/web should report SelectorMismatch and name the closest pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+        tier: front        # the Service below expects tier=frontend
+    spec:
+      containers:
+        - name: web
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load`
+          command: ["httpd", "-f", "-p", "8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  selector:
+    app: web
+    tier: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

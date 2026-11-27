@@ -1,0 +1,32 @@
+---
+# Scenario 08: Missing Secret mounted as a volume
+# The pod mounts Secret "db-creds", which was never created. The volume can't
+# be set up, so the pod stays Pending/ContainerCreating with FailedMount events.
+# kubectl-why should report MissingSecret and point at the volume. It never
+# reads Secrets itself: this comes from the kubelet's error message.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secret-app
+  labels:
+    app: secret-app
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent  # allows images pre-loaded with `kind load`
+      command: ["sleep", "3600"]
+      volumeMounts:
+        - name: creds
+          mountPath: /etc/creds
+          readOnly: true
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "16Mi"
+        limits:
+          memory: "64Mi"
+  volumes:
+    - name: creds
+      secret:
+        secretName: db-creds   # does not exist

@@ -70,6 +70,9 @@ kubectl why <pod> [-n namespace]
 kubectl why deploy/web -n shop
 kubectl why sts/postgres
 
+# Diagnose a Service: selector, endpoints and ports, then its unhealthiest pod
+kubectl why svc/web -n shop
+
 # JSON output
 kubectl why mypod --output json
 
@@ -81,7 +84,7 @@ kubectl why mypod --explain --model mistral
 kubectl why mypod --dry-run
 ```
 
-Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs` or `job` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
+Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs`, `job` or `svc` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. For a Deployment, rollout problems are checked too: pods that can't be created (quota, Pod Security, OpenShift SCC…) and rollouts stuck past their deadline. Other workloads with **no pods** are reported as an error that points at quota or admission problems.
 
 ### Flags
 
@@ -92,7 +95,7 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 | `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
 | `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |
 | `--model` | `llama3` | Model for `--explain` |
-| `--output` | `text` | Output format: `text \| json` |
+| `-o, --output` | `text` | Output format: `text \| json` |
 | `--kubeconfig` | _(standard lookup)_ | Override kubeconfig path |
 | `--version` | | Print version, commit and build date |
 
@@ -113,13 +116,16 @@ kubectl why <pod> | <kind>/<name>
          ▼
 ┌─────────────────┐
 │   pkg/collect   │  reads pod spec/status, events, logs (last 100 lines),
-│   Collector     │  owner chain, CM/Secret names, PVCs, node conditions
+│   Collector     │  owner chain, CM/Secret names, PVCs + their events, node conditions
 └────────┬────────┘
          │ PodFacts
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
-│   Rule Engine   │  SIGKILL, FailedScheduling (more planned, see below)
+│   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure,
+│                 │  MissingConfigMap, MissingSecret, UnboundPVC;
+│                 │  for Services: SelectorMismatch, NoReadyEndpoints, ServicePortMismatch;
+│                 │  for Deployments: ReplicaFailure, RolloutStuck
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -190,9 +196,15 @@ rules:
   - apiGroups: [""]
     resources: [events]
     verbs: [list]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get]         # kubectl why svc/<name>
   - apiGroups: [apps]
     resources: [deployments, replicasets, statefulsets, daemonsets]
     verbs: [get]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [list]        # a Deployment's ReplicaSets (rollout checks)
   - apiGroups: [batch]
     resources: [jobs]
     verbs: [get]
@@ -223,11 +235,16 @@ rules:
 | Container terminated with `OOMKilled` reason | `OOMKilled` |
 | Exit code 137 (SIGKILL) without `OOMKilled` — probe kill, grace period, eviction | `SIGKILL` |
 | `FailedScheduling` events while Pending | `FailedScheduling` |
-| _(planned)_ CrashLoopBackOff | `CrashLoopBackOff` |
-| _(planned)_ Failing liveness/readiness probes | `ProbeFailure` |
-| _(planned)_ Missing ConfigMap / Secret | `MissingConfigMap` / `MissingSecret` |
-| _(planned)_ Unbound PVC | `UnboundPVC` |
-| _(planned)_ Service selector mismatch | `SelectorMismatch` |
+| Container in `CrashLoopBackOff`: exit code explained (127 command not found, 0 exited but shouldn't, …) plus the last lines of the previous run's logs | `CrashLoopBackOff` |
+| Failing liveness/readiness/startup probes: probe config shown next to the failure; wrong port, 404 path, timeouts and auth errors explained | `ProbeFailure` |
+| Missing ConfigMap / Secret (or a key in one), from the kubelet's errors: points at the env, envFrom or volume that references it. Never reads ConfigMaps or Secrets itself. | `MissingConfigMap` / `MissingSecret` |
+| PVC missing, Pending or Lost: reason taken from the PVC's own events (unknown StorageClass, no default class, provisioner failure). Ignores claims that are only waiting for the pod to be scheduled. | `UnboundPVC` |
+| `kubectl why svc/<name>`: selector matches no pods; the closest pod and the differing label are named | `SelectorMismatch` |
+| `kubectl why svc/<name>`: selected pods exist but none is Ready (then the pod is diagnosed too) | `NoReadyEndpoints` |
+| `kubectl why svc/<name>`: `targetPort` is not a port the pods declare | `ServicePortMismatch` |
+| `kubectl why deploy/<name>`: pods can't be created (ResourceQuota, Pod Security, OpenShift SCC, LimitRange, webhook, missing ServiceAccount), from the ReplicaSet's `FailedCreate` events | `ReplicaFailure` |
+| `kubectl why deploy/<name>`: rollout exceeded its progress deadline; new vs old ReplicaSet pods shown, rollback command suggested | `RolloutStuck` |
+| `FailedScheduling` with insufficient CPU/memory now also shows the pod's requests | `FailedScheduling` |
 
 ---
 
