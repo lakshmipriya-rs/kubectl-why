@@ -11,6 +11,7 @@ import (
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/llm"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/report"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/rules"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/target"
 )
 
 func TestReporter_TextMode(t *testing.T) {
@@ -35,7 +36,7 @@ func TestReporter_TextMode(t *testing.T) {
 		Confidence:  "high",
 	}
 
-	if err := r.Print(findings, resp, "text"); err != nil {
+	if err := r.Print(report.Result{Findings: findings, LLM: resp}, "text"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,7 +61,7 @@ func TestReporter_TextMode(t *testing.T) {
 func TestReporter_UncitedLLMClaimIsFlagged(t *testing.T) {
 	var buf bytes.Buffer
 	resp := &llm.Response{RootCause: "Something", Confidence: "low"}
-	if err := report.New(&buf).Print(nil, resp, "text"); err != nil {
+	if err := report.New(&buf).Print(report.Result{LLM: resp}, "text"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "not backed by collected evidence") {
@@ -75,7 +76,7 @@ func TestReporter_JSONMode(t *testing.T) {
 	findings := []rules.Finding{
 		{Category: rules.CategoryImagePullBackOff, Severity: "critical"},
 	}
-	if err := r.Print(findings, &llm.Response{RootCause: "bad tag"}, "json"); err != nil {
+	if err := r.Print(report.Result{Findings: findings, LLM: &llm.Response{RootCause: "bad tag"}}, "json"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,10 +95,37 @@ func TestReporter_JSONMode(t *testing.T) {
 func TestReporter_NoFindings(t *testing.T) {
 	var buf bytes.Buffer
 	r := report.New(&buf)
-	if err := r.Print(nil, &llm.Response{}, "text"); err != nil {
+	if err := r.Print(report.Result{LLM: &llm.Response{}}, "text"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "No problems detected") {
 		t.Error("expected no-problems message")
+	}
+}
+
+func TestReporter_WorkloadTargetHeader(t *testing.T) {
+	var buf bytes.Buffer
+	tgt := &target.Target{Kind: target.KindDeployment, Name: "web", Pod: "web-abc", PodsTotal: 3, PodsUnhealthy: 2}
+	if err := report.New(&buf).Print(report.Result{Target: tgt}, "text"); err != nil {
+		t.Fatal(err)
+	}
+	want := "Diagnosing Deployment/web → pod web-abc (2 of 3 pods unhealthy)"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("expected %q in output, got:\n%s", want, buf.String())
+	}
+}
+
+func TestReporter_JSONIncludesTarget(t *testing.T) {
+	var buf bytes.Buffer
+	tgt := &target.Target{Kind: target.KindPod, Name: "p", Pod: "p"}
+	if err := report.New(&buf).Print(report.Result{Target: tgt}, "json"); err != nil {
+		t.Fatal(err)
+	}
+	var result report.Result
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Target == nil || result.Target.Pod != "p" || result.Target.Kind != target.KindPod {
+		t.Errorf("target missing from JSON: %s", buf.String())
 	}
 }

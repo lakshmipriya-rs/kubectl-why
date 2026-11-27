@@ -80,6 +80,7 @@ Create `eval/scenarios/NN-name/` with:
   "fix_keywords": ["memory", "limit"],
   "must_not_hallucinate": ["ImagePullBackOff"],
   "pod_selector": "app=web",
+  "target": "deploy/web",
   "wait_for": {
     "pod_phase": "Pending",
     "container_waiting_reason": "ImagePullBackOff",
@@ -90,6 +91,6 @@ Create `eval/scenarios/NN-name/` with:
 }
 ```
 
-All `wait_for` fields are optional, but set at least one. Every field that is set must match. Container conditions match on any container or init container, including its previous (restarted) state. `pod_selector` is only needed when a scenario creates several pods.
+All `wait_for` fields are optional, but set at least one. Every field that is set must match. Container conditions match on any container or init container, including its previous (restarted) state. `pod_selector` is only needed when a scenario creates several pods. `target` is passed to kubectl-why instead of the failing pod's name, to test workload targets such as `deploy/web`.
 
 `go test ./eval/...` checks that every scenario's files are valid.

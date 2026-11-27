@@ -66,6 +66,10 @@ Download from [Releases](https://github.com/lakshmipriya-rs/kubectl-why/releases
 # Diagnose a pod (uses Ollama by default)
 kubectl why <pod> [-n namespace]
 
+# Diagnose a workload: its unhealthiest pod is picked automatically
+kubectl why deploy/web -n shop
+kubectl why sts/postgres
+
 # Rules-only, no LLM call
 kubectl why mypod --no-llm
 
@@ -79,6 +83,8 @@ kubectl why mypod --output json
 kubectl why mypod --provider ollama --model mistral
 kubectl why mypod --provider anthropic --model claude-3-5-haiku-20241022
 ```
+
+Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs` or `job` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
 
 ### Flags
 
@@ -171,13 +177,19 @@ metadata:
   name: kubectl-why-reader
 rules:
   - apiGroups: [""]
-    resources: [pods, pods/log, persistentvolumeclaims]
+    resources: [pods/log, persistentvolumeclaims]
     verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]   # list: find a workload's pods
   - apiGroups: [""]
     resources: [events]
     verbs: [list]
   - apiGroups: [apps]
-    resources: [replicasets, deployments]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
     verbs: [get]
 ---
 # Optional, cluster-scoped: lets kubectl-why read the conditions of the node a

@@ -2,7 +2,12 @@
   "scenario": "01-bad-image",
   "description": "Deployment with a nonexistent image tag causes ImagePullBackOff",
   "expected_category": "ImagePullBackOff",
-  "fix_keywords": ["image", "tag", "doesnotexist999", "nginx"],
+  "fix_keywords": [
+    "image",
+    "tag",
+    "doesnotexist999",
+    "nginx"
+  ],
   "must_not_hallucinate": [
     "OOMKilled",
     "CrashLoopBackOff",
@@ -10,6 +15,7 @@
     "insufficient cpu",
     "node selector"
   ],
+  "target": "deploy/bad-image",
   "wait_for": {
     "pod_phase": "Pending",
     "container_waiting_reason": "ImagePullBackOff"

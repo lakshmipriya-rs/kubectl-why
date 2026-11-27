@@ -19,6 +19,7 @@ import (
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/redact"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/report"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/rules"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/target"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/validate"
 )
 
@@ -37,14 +38,28 @@ var f flags
 
 // rootCmd is the top-level command: kubectl why <pod>
 var rootCmd = &cobra.Command{
-	Use:   "why <pod>",
-	Short: "Diagnose a failing Kubernetes pod and print a root-cause report",
-	Long: `kubectl-why collects pod spec/status, events, and logs for a single failing
-pod, runs deterministic rule detectors, optionally consults an LLM, and prints
-a structured root-cause report. It is strictly read-only and never modifies
-the cluster.`,
-	Args: cobra.ExactArgs(1),
+	Use:   "why <pod> | <kind>/<name>",
+	Short: "Diagnose a failing Kubernetes pod or workload and print a root-cause report",
+	Long: `kubectl-why collects pod spec/status, events, and logs for a failing pod,
+runs deterministic rule detectors, optionally consults an LLM, and prints a
+structured root-cause report. It is strictly read-only and never modifies
+the cluster.
+
+The target is a pod name, or a workload as <kind>/<name>
+(kinds: ` + target.Supported + `). For a workload, its unhealthiest pod is diagnosed.`,
+	Example: `  kubectl why web-7d9f-abcde
+  kubectl why deploy/web -n shop
+  kubectl why sts/postgres --output json`,
+	// Validate the argument count and the target's format before touching the
+	// cluster, so typos fail fast without needing a reachable cluster.
+	Args: cobra.MatchAll(cobra.ExactArgs(1), func(_ *cobra.Command, args []string) error {
+		_, _, err := target.Parse(args[0])
+		return err
+	}),
 	RunE: run,
+	// Runtime errors (pod not found, no pods…) print only the error, not the
+	// whole usage text that would bury it.
+	SilenceUsage: true,
 }
 
 // Execute is the entry point called from main.
@@ -63,7 +78,6 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	podName := args[0]
 	// Cancel API and LLM calls cleanly on Ctrl-C / SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -84,9 +98,15 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating kubernetes client: %w", err)
 	}
 
+	// ── Resolve target (pod, or a workload's unhealthiest pod) ────────────────
+	tgt, err := target.Resolve(ctx, client, f.namespace, args[0])
+	if err != nil {
+		return err
+	}
+
 	// ── Collect ───────────────────────────────────────────────────────────────
 	collector := collect.New(client)
-	facts, err := collector.Collect(ctx, podName, f.namespace)
+	facts, err := collector.Collect(ctx, tgt.Pod, f.namespace)
 	if err != nil {
 		return fmt.Errorf("collecting pod facts: %w", err)
 	}
@@ -103,9 +123,10 @@ func run(cmd *cobra.Command, args []string) error {
 	// ── Dry-run: print payload and stop ───────────────────────────────────────
 	if f.dryRun {
 		payload := struct {
+			Target        target.Target         `json:"target"`
 			RedactedFacts *redact.RedactedFacts `json:"redacted_facts"`
 			Findings      []rules.Finding       `json:"findings"`
-		}{redacted, redactedFindings}
+		}{tgt, redacted, redactedFindings}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(payload)
@@ -138,5 +159,5 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// ── Report ────────────────────────────────────────────────────────────────
 	r := report.New(os.Stdout)
-	return r.Print(findings, resp, f.output)
+	return r.Print(report.Result{Target: &tgt, Findings: findings, LLM: resp}, f.output)
 }

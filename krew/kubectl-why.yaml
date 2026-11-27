@@ -7,8 +7,8 @@ spec:
   homepage: https://github.com/lakshmipriya-rs/kubectl-why
   shortDescription: Diagnose a failing pod and print a root-cause report
   description: |
-    kubectl-why collects pod spec/status, events, and logs for a single failing
-    pod, runs deterministic rule detectors (ImagePullBackOff, OOMKilled,
+    kubectl-why collects pod spec/status, events, and logs for a failing pod
+    (or a workload's unhealthiest pod), runs deterministic rule detectors (ImagePullBackOff, OOMKilled,
     FailedScheduling, …), optionally consults a local or hosted LLM, and prints
     a structured root-cause report.
 
@@ -17,6 +17,9 @@ spec:
     Examples:
       # Diagnose a pod in the default namespace
       kubectl why mypod
+
+      # Diagnose a Deployment (its unhealthiest pod is picked)
+      kubectl why deploy/web -n shop
 
       # Diagnose in another namespace, rules-only (no LLM)
       kubectl why mypod -n production --no-llm

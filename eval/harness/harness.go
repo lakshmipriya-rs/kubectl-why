@@ -28,8 +28,11 @@ type GroundTruth struct {
 	MustNotHallucinate []string `json:"must_not_hallucinate"`
 	// PodSelector is an optional label selector (e.g. "app=web") used when a
 	// scenario creates several pods. Empty means any pod in the namespace.
-	PodSelector string   `json:"pod_selector,omitempty"`
-	WaitFor     WaitSpec `json:"wait_for"`
+	PodSelector string `json:"pod_selector,omitempty"`
+	// Target is what to pass to kubectl-why, e.g. "deploy/web". Empty means
+	// the failing pod found by WaitFor.
+	Target  string   `json:"target,omitempty"`
+	WaitFor WaitSpec `json:"wait_for"`
 }
 
 // WaitSpec describes what state the pod must reach before scoring.
@@ -124,7 +127,11 @@ func runScenario(ctx context.Context, dir string, opts Options) ScoreResult {
 	}
 	res.Pod = podName
 
-	output, err := runWhy(ctx, opts, podName, ns)
+	whyTarget := podName
+	if gt.Target != "" {
+		whyTarget = gt.Target
+	}
+	output, err := runWhy(ctx, opts, whyTarget, ns)
 	if err != nil {
 		res.Error = fmt.Sprintf("kubectl-why failed: %v", err)
 		return res
@@ -378,8 +385,8 @@ func ensureNamespace(ctx context.Context, ns string) error {
 
 // runWhy executes kubectl-why and returns its stdout (the JSON report).
 // Stderr (warnings) is kept out of the JSON and only shown on failure.
-func runWhy(ctx context.Context, opts Options, podName, ns string) (string, error) {
-	args := []string{podName, "-n", ns, "--output", "json"}
+func runWhy(ctx context.Context, opts Options, whyTarget, ns string) (string, error) {
+	args := []string{whyTarget, "-n", ns, "--output", "json"}
 	if !opts.UseLLM {
 		args = append(args, "--no-llm")
 	}

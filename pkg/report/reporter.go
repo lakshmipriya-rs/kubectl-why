@@ -11,6 +11,7 @@ import (
 
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/llm"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/rules"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/target"
 )
 
 // Reporter writes diagnostic output to a writer.
@@ -23,22 +24,35 @@ func New(w io.Writer) *Reporter { return &Reporter{w: w} }
 
 // Result is the full output shape (used for JSON mode).
 type Result struct {
+	Target   *target.Target  `json:"target,omitempty"`
 	Findings []rules.Finding `json:"findings"`
 	LLM      *llm.Response   `json:"llm,omitempty"`
 }
 
-// Print formats findings and the LLM response according to format ("text"|"json").
-func (r *Reporter) Print(findings []rules.Finding, resp *llm.Response, format string) error {
-	result := Result{Findings: findings, LLM: resp}
-
+// Print formats the result according to format ("text"|"json").
+func (r *Reporter) Print(result Result, format string) error {
 	switch strings.ToLower(format) {
 	case "json":
 		enc := json.NewEncoder(r.w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(result)
 	default:
-		return r.printText(findings, resp)
+		r.printTarget(result.Target)
+		return r.printText(result.Findings, result.LLM)
 	}
+}
+
+// printTarget says what is being diagnosed, and which pod was chosen for a workload.
+func (r *Reporter) printTarget(t *target.Target) {
+	if t == nil {
+		return
+	}
+	if !t.IsWorkload() {
+		fmt.Fprintf(r.w, "Diagnosing Pod/%s\n", t.Pod)
+		return
+	}
+	fmt.Fprintf(r.w, "Diagnosing %s/%s → pod %s (%d of %d pods unhealthy)\n",
+		t.Kind, t.Name, t.Pod, t.PodsUnhealthy, t.PodsTotal)
 }
 
 func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response) error {
