@@ -66,6 +66,8 @@ All scenarios use only the official `busybox:1.36` image, apart from scenario 01
 | 04 | liveness-sigkill | `SIGKILL` |
 | 05 | crashloop (as `deploy/crashy`) | `CrashLoopBackOff` |
 | 06 | readiness-404 (as `deploy/web`) | `ProbeFailure` |
+| 07 | missing-configmap (as `deploy/config-app`) | `MissingConfigMap` |
+| 08 | missing-secret-volume | `MissingSecret` |
 
 ## Adding a scenario
 

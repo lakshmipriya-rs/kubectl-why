@@ -119,7 +119,8 @@ kubectl why <pod> | <kind>/<name>
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
-│   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure
+│   Rule Engine   │  SIGKILL, FailedScheduling, CrashLoopBackOff, ProbeFailure,
+│                 │  MissingConfigMap, MissingSecret
 └────────┬────────┘
          │ []Finding with evidence {id, source, field, value}
          ▼
@@ -225,7 +226,7 @@ rules:
 | `FailedScheduling` events while Pending | `FailedScheduling` |
 | Container in `CrashLoopBackOff`: exit code explained (127 command not found, 0 exited but shouldn't, …) plus the last lines of the previous run's logs | `CrashLoopBackOff` |
 | Failing liveness/readiness/startup probes: probe config shown next to the failure; wrong port, 404 path, timeouts and auth errors explained | `ProbeFailure` |
-| _(planned)_ Missing ConfigMap / Secret | `MissingConfigMap` / `MissingSecret` |
+| Missing ConfigMap / Secret (or a key in one), from the kubelet's errors: points at the env, envFrom or volume that references it. Never reads ConfigMaps or Secrets itself. | `MissingConfigMap` / `MissingSecret` |
 | _(planned)_ Unbound PVC | `UnboundPVC` |
 | _(planned)_ Service selector mismatch | `SelectorMismatch` |
 

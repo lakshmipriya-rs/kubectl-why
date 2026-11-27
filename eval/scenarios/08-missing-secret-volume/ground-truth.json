@@ -1,0 +1,16 @@
+{
+  "scenario": "08-missing-secret-volume",
+  "description": "Pod mounts a Secret volume that doesn't exist; FailedMount, pod stuck Pending",
+  "expected_category": "MissingSecret",
+  "fix_keywords": ["db-creds", "does not exist", "secretName"],
+  "must_not_hallucinate": [
+    "MissingConfigMap",
+    "ImagePullBackOff",
+    "CrashLoopBackOff",
+    "FailedScheduling"
+  ],
+  "wait_for": {
+    "pod_phase": "Pending",
+    "event_reason": "FailedMount"
+  }
+}

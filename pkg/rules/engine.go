@@ -21,6 +21,8 @@ var registry = []RuleFunc{
 	CheckOOMKilled,
 	CheckSIGKILL,
 	CheckProbeFailure,
+	CheckMissingConfigMap,
+	CheckMissingSecret,
 	CheckFailedScheduling,
 }
 
