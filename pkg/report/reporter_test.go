@@ -129,3 +129,45 @@ func TestReporter_JSONIncludesTarget(t *testing.T) {
 		t.Errorf("target missing from JSON: %s", buf.String())
 	}
 }
+
+// Without --explain the LLM is never called (LLM == nil): suggest --explain.
+// With --explain but nothing found, don't repeat the suggestion.
+func TestReporter_NoFindingsHint(t *testing.T) {
+	var buf bytes.Buffer
+	if err := report.New(&buf).Print(report.Result{}, "text"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "--explain") {
+		t.Errorf("expected --explain hint in rules-only mode, got:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	if err := report.New(&buf).Print(report.Result{LLM: &llm.Response{}}, "text"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "--explain") {
+		t.Errorf("did not expect --explain hint when the LLM was already used, got:\n%s", buf.String())
+	}
+}
+
+// Rules-only JSON output has no "llm" key at all.
+func TestReporter_JSONOmitsLLMWhenNotUsed(t *testing.T) {
+	var buf bytes.Buffer
+	if err := report.New(&buf).Print(report.Result{}, "json"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), `"llm"`) {
+		t.Errorf("expected no llm key, got: %s", buf.String())
+	}
+}
+
+func TestReporter_HealthyPod(t *testing.T) {
+	var buf bytes.Buffer
+	tgt := &target.Target{Kind: target.KindPod, Name: "p", Pod: "p", PodUnhealthy: false}
+	if err := report.New(&buf).Print(report.Result{Target: tgt}, "text"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "looks healthy") || strings.Contains(buf.String(), "--explain") {
+		t.Errorf("expected a healthy message without the --explain hint, got:\n%s", buf.String())
+	}
+}

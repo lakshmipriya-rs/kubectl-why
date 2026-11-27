@@ -67,7 +67,7 @@ func (r ScoreResult) Passed() bool {
 type Options struct {
 	ScenariosDir string
 	Binary       string
-	UseLLM       bool          // when false, kubectl-why runs with --no-llm
+	UseLLM       bool          // when true, kubectl-why runs with --explain
 	Timeout      time.Duration // per-scenario wait for the failure state
 	Filter       string        // run only scenarios whose directory name contains this
 }
@@ -387,8 +387,8 @@ func ensureNamespace(ctx context.Context, ns string) error {
 // Stderr (warnings) is kept out of the JSON and only shown on failure.
 func runWhy(ctx context.Context, opts Options, whyTarget, ns string) (string, error) {
 	args := []string{whyTarget, "-n", ns, "--output", "json"}
-	if !opts.UseLLM {
-		args = append(args, "--no-llm")
+	if opts.UseLLM {
+		args = append(args, "--explain")
 	}
 	out, err := runCmd(ctx, nil, opts.Binary, args...)
 	return string(out), err

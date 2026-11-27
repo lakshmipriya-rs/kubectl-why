@@ -26,7 +26,8 @@ import (
 // flags holds all CLI options.
 type flags struct {
 	namespace  string
-	noLLM      bool
+	explain    bool
+	noLLM      bool // deprecated: rules-only is now the default
 	dryRun     bool
 	provider   string
 	model      string
@@ -41,15 +42,18 @@ var rootCmd = &cobra.Command{
 	Use:   "why <pod> | <kind>/<name>",
 	Short: "Diagnose a failing Kubernetes pod or workload and print a root-cause report",
 	Long: `kubectl-why collects pod spec/status, events, and logs for a failing pod,
-runs deterministic rule detectors, optionally consults an LLM, and prints a
-structured root-cause report. It is strictly read-only and never modifies
-the cluster.
+runs deterministic rule detectors and prints a structured, evidence-backed
+root-cause report. It is strictly read-only and never modifies the cluster.
+
+By default no data leaves your machine. Use --explain to also ask an LLM
+(a local Ollama) for a narrative analysis that must cite the rule evidence.
 
 The target is a pod name, or a workload as <kind>/<name>
 (kinds: ` + target.Supported + `). For a workload, its unhealthiest pod is diagnosed.`,
 	Example: `  kubectl why web-7d9f-abcde
   kubectl why deploy/web -n shop
-  kubectl why sts/postgres --output json`,
+  kubectl why sts/postgres --output json
+  kubectl why deploy/web --explain`,
 	// Validate the argument count and the target's format before touching the
 	// cluster, so typos fail fast without needing a reachable cluster.
 	Args: cobra.MatchAll(cobra.ExactArgs(1), func(_ *cobra.Command, args []string) error {
@@ -69,10 +73,14 @@ func Execute() error {
 
 func init() {
 	rootCmd.Flags().StringVarP(&f.namespace, "namespace", "n", "default", "Kubernetes namespace")
-	rootCmd.Flags().BoolVar(&f.noLLM, "no-llm", false, "Rules only – no network LLM calls")
-	rootCmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the redacted payload and exit without calling the LLM")
-	rootCmd.Flags().StringVar(&f.provider, "provider", "ollama", "LLM provider: ollama | anthropic | openai")
-	rootCmd.Flags().StringVar(&f.model, "model", "", "Model name override (provider-specific default used when empty)")
+	rootCmd.Flags().BoolVar(&f.explain, "explain", false, "Also ask an LLM for an analysis that cites the rule evidence (sends redacted data to the provider)")
+	rootCmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the redacted payload that --explain would send, and exit")
+	rootCmd.Flags().StringVar(&f.provider, "provider", "ollama", "LLM provider for --explain: ollama")
+	rootCmd.Flags().StringVar(&f.model, "model", "", "Model for --explain (provider default when empty)")
+
+	// Kept so existing scripts don't break; rules-only is the default now.
+	rootCmd.Flags().BoolVar(&f.noLLM, "no-llm", false, "Rules only (now the default)")
+	_ = rootCmd.Flags().MarkDeprecated("no-llm", "rules-only is now the default; use --explain to enable the LLM")
 	rootCmd.Flags().StringVar(&f.output, "output", "text", "Output format: text | json")
 	rootCmd.Flags().StringVar(&f.kubeconfig, "kubeconfig", "", "Path to kubeconfig (defaults to KUBECONFIG env or ~/.kube/config)")
 }
@@ -111,6 +119,8 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("collecting pod facts: %w", err)
 	}
 
+	tgt.PodUnhealthy = target.IsUnhealthy(*facts.Pod)
+
 	// ── Rules ─────────────────────────────────────────────────────────────────
 	findings := rules.RunAll(facts)
 
@@ -132,30 +142,25 @@ func run(cmd *cobra.Command, args []string) error {
 		return enc.Encode(payload)
 	}
 
-	// ── LLM ───────────────────────────────────────────────────────────────────
-	var provider llm.Provider
-	if f.noLLM {
-		provider = llm.NewNoop()
-	} else {
-		provider, err = llm.NewProvider(f.provider, f.model)
+	// ── LLM (only with --explain) ─────────────────────────────────────────────
+	var resp *llm.Response // nil = LLM not used; the report says so
+	if f.explain && !f.noLLM {
+		provider, err := llm.NewProvider(f.provider, f.model)
 		if err != nil {
 			return fmt.Errorf("creating LLM provider: %w", err)
 		}
-	}
-
-	req := llm.BuildRequest(redacted, redactedFindings)
-	resp, err := provider.Complete(ctx, req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err() // interrupted by the user, not an LLM failure
+		resp, err = provider.Complete(ctx, llm.BuildRequest(redacted, redactedFindings))
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err() // interrupted by the user, not an LLM failure
+			}
+			// Gracefully degrade: show rules output even if LLM fails.
+			fmt.Fprintf(os.Stderr, "warning: LLM call failed (%v) – showing rules-only output\n", err)
+			resp = &llm.Response{}
 		}
-		// Gracefully degrade: show rules output even if LLM fails.
-		fmt.Fprintf(os.Stderr, "warning: LLM call failed (%v) – showing rules-only output\n", err)
-		resp = &llm.Response{}
+		// Keep only evidence IDs that exist; uncited claims get low confidence.
+		resp = validate.FilterUnsupported(resp, findings)
 	}
-
-	// ── Validate ──────────────────────────────────────────────────────────────
-	resp = validate.FilterUnsupported(resp, findings)
 
 	// ── Report ────────────────────────────────────────────────────────────────
 	r := report.New(os.Stdout)

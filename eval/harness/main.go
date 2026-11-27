@@ -26,7 +26,7 @@ func main() {
 	var opts Options
 	flag.StringVar(&opts.ScenariosDir, "scenarios", "eval/scenarios", "Path to scenarios directory")
 	flag.StringVar(&opts.Binary, "binary", "kubectl-why", "Path to kubectl-why binary")
-	flag.BoolVar(&opts.UseLLM, "llm", false, "Let kubectl-why call its LLM provider (default: run with --no-llm)")
+	flag.BoolVar(&opts.UseLLM, "llm", false, "Run kubectl-why with --explain (needs its LLM provider, e.g. a local Ollama)")
 	flag.DurationVar(&opts.Timeout, "timeout", 3*time.Minute, "How long to wait for each scenario's failure state")
 	flag.StringVar(&opts.Filter, "run", "", "Only run scenarios whose directory name contains this string")
 	flag.Parse()

@@ -201,3 +201,12 @@ func TestUnhealthiness(t *testing.T) {
 		})
 	}
 }
+
+func TestIsUnhealthy(t *testing.T) {
+	if IsUnhealthy(corev1.Pod{Status: running(0)}) {
+		t.Error("running, ready, no restarts should be healthy")
+	}
+	if !IsUnhealthy(corev1.Pod{Status: waiting("CrashLoopBackOff")}) {
+		t.Error("crash-looping pod should be unhealthy")
+	}
+}

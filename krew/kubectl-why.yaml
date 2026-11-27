@@ -9,8 +9,8 @@ spec:
   description: |
     kubectl-why collects pod spec/status, events, and logs for a failing pod
     (or a workload's unhealthiest pod), runs deterministic rule detectors (ImagePullBackOff, OOMKilled,
-    FailedScheduling, …), optionally consults a local or hosted LLM, and prints
-    a structured root-cause report.
+    FailedScheduling, …) and prints a structured, evidence-backed root-cause
+    report. No data leaves your machine unless you pass --explain.
 
     It is strictly read-only and never modifies the cluster.
 
@@ -21,8 +21,8 @@ spec:
       # Diagnose a Deployment (its unhealthiest pod is picked)
       kubectl why deploy/web -n shop
 
-      # Diagnose in another namespace, rules-only (no LLM)
-      kubectl why mypod -n production --no-llm
+      # Also ask a local LLM (Ollama) for an analysis citing the evidence
+      kubectl why mypod -n production --explain
 
       # JSON output for scripting
       kubectl why mypod --output json

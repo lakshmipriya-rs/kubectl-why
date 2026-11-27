@@ -9,7 +9,7 @@
 
 ## Why kubectl-why?
 
-`kubectl describe pod` and `kubectl logs` give you raw data. `kubectl-why` gives you a **diagnosis**:
+`kubectl describe pod` and `kubectl logs` give you raw data. `kubectl-why` gives you a **diagnosis**, where every finding points at the exact fields and events it is based on. It runs fully offline by default; add `--explain` for an optional LLM analysis that must cite that evidence:
 
 ```
 🔍 Rule Engine Findings
@@ -63,25 +63,22 @@ Download from [Releases](https://github.com/lakshmipriya-rs/kubectl-why/releases
 ## Usage
 
 ```bash
-# Diagnose a pod (uses Ollama by default)
+# Diagnose a pod (rules only: no LLM, nothing leaves your machine)
 kubectl why <pod> [-n namespace]
 
 # Diagnose a workload: its unhealthiest pod is picked automatically
 kubectl why deploy/web -n shop
 kubectl why sts/postgres
 
-# Rules-only, no LLM call
-kubectl why mypod --no-llm
-
-# Print redacted payload without calling the LLM
-kubectl why mypod --dry-run
-
 # JSON output
 kubectl why mypod --output json
 
-# Use a specific provider / model
-kubectl why mypod --provider ollama --model mistral
-kubectl why mypod --provider anthropic --model claude-3-5-haiku-20241022
+# Also ask a local LLM (Ollama) for an analysis that cites the evidence
+kubectl why mypod --explain
+kubectl why mypod --explain --model mistral
+
+# See exactly what --explain would send (redacted), without sending it
+kubectl why mypod --dry-run
 ```
 
 Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `sts`, `ds`, `rs` or `job` (long names like `deployment` and `deployment.apps` work too). For a workload, pods are ranked by how clearly they are failing (Failed > crash-looping/pending > not ready > restarted), then by restart count, then newest first. The report says which pod was chosen and how many are unhealthy. A workload with **no pods** is reported as an error that points at quota or admission problems.
@@ -91,21 +88,29 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-n, --namespace` | `default` | Kubernetes namespace |
-| `--no-llm` | `false` | Rules-only; no network calls |
-| `--dry-run` | `false` | Print redacted payload, skip LLM |
-| `--provider` | `ollama` | LLM provider: `ollama \| anthropic \| openai` |
-| `--model` | _(provider default)_ | Model name override |
+| `--explain` | `false` | Also ask an LLM for an analysis citing the rule evidence |
+| `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
+| `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |
+| `--model` | `llama3` | Model for `--explain` |
 | `--output` | `text` | Output format: `text \| json` |
 | `--kubeconfig` | _(standard lookup)_ | Override kubeconfig path |
+| `--version` | | Print version, commit and build date |
+
+`--no-llm` still works but is deprecated: rules-only is now the default.
 
 ---
 
 ## Architecture
 
 ```
-kubectl why <pod>
+kubectl why <pod> | <kind>/<name>
         │
         ▼
+┌─────────────────┐
+│   pkg/target    │  pod name, or a workload's unhealthiest pod
+└────────┬────────┘
+         │ pod name
+         ▼
 ┌─────────────────┐
 │   pkg/collect   │  reads pod spec/status, events, logs (last 100 lines),
 │   Collector     │  owner chain, CM/Secret names, PVCs, node conditions
@@ -114,18 +119,18 @@ kubectl why <pod>
          ▼
 ┌─────────────────┐
 │   pkg/rules     │  deterministic detectors: ImagePullBackOff, OOMKilled,
-│   Rule Engine   │  FailedScheduling, CrashLoopBackOff, probe failures,
-└────────┬────────┘  missing CM/Secret, unbound PVC, selector mismatch
-         │ []Finding
+│   Rule Engine   │  SIGKILL, FailedScheduling (more planned, see below)
+└────────┬────────┘
+         │ []Finding with evidence {id, source, field, value}
          ▼
 ┌─────────────────┐
 │   pkg/redact    │  strips secrets, tokens, base64 blobs, credential patterns
 │   Redactor      │  before any data leaves the machine
 └────────┬────────┘
-         │ RedactedFacts
+         │ RedactedFacts            ── only with --explain ──
          ▼
 ┌─────────────────┐
-│   pkg/llm       │  Provider interface → Ollama (default) / Anthropic / OpenAI
+│   pkg/llm       │  Provider interface → Ollama
 │   LLM Layer     │  Logs/events wrapped in delimiter blocks (prompt injection guard)
 └────────┬────────┘
          │ Response {root_cause, causal_chain, evidence_ids[], fix, confidence}
@@ -228,12 +233,13 @@ rules:
 
 ## LLM providers
 
+The LLM is **optional** and only used with `--explain`. Without it, kubectl-why makes no network calls except to the Kubernetes API.
+
 | Provider | Flag | Status |
 |----------|------|--------|
-| Ollama (local) | `--provider ollama` | ✅ Implemented |
-| Anthropic | `--provider anthropic` | 🚧 Stub (coming soon) |
-| OpenAI | `--provider openai` | 🚧 Stub (coming soon) |
-| None | `--no-llm` | ✅ Rules-only mode |
+| None (default) | _(no flag)_ | ✅ Rules-only, fully offline |
+| Ollama (local) | `--explain --provider ollama` | ✅ Implemented |
+| Hosted providers | | 🗺️ Planned. For Claude and other AI assistants, see the MCP server on the roadmap. |
 
 ---
 

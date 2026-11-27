@@ -67,3 +67,16 @@ func TestOllama_Complete_RespectsContextCancel(t *testing.T) {
 		t.Error("Complete did not return promptly after context cancellation")
 	}
 }
+
+func TestNewProvider(t *testing.T) {
+	p, err := NewProvider("Ollama", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name() != "ollama:llama3" {
+		t.Errorf("default model: got %q", p.Name())
+	}
+	if _, err := NewProvider("anthropic", ""); err == nil {
+		t.Error("expected error for a provider that isn't implemented")
+	}
+}

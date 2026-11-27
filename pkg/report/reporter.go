@@ -38,7 +38,8 @@ func (r *Reporter) Print(result Result, format string) error {
 		return enc.Encode(result)
 	default:
 		r.printTarget(result.Target)
-		return r.printText(result.Findings, result.LLM)
+		podHealthy := result.Target != nil && !result.Target.PodUnhealthy
+		return r.printText(result.Findings, result.LLM, podHealthy)
 	}
 }
 
@@ -55,11 +56,19 @@ func (r *Reporter) printTarget(t *target.Target) {
 		t.Kind, t.Name, t.Pod, t.PodsUnhealthy, t.PodsTotal)
 }
 
-func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response) error {
+// podHealthy is true when the diagnosed pod shows no sign of failing.
+func (r *Reporter) printText(findings []rules.Finding, resp *llm.Response, podHealthy bool) error {
 	hr := strings.Repeat("─", 60)
 
 	if len(findings) == 0 && (resp == nil || resp.RootCause == "") {
-		fmt.Fprintln(r.w, "No problems detected by rules engine. Try --no-llm=false with a model for deeper analysis.")
+		if podHealthy {
+			fmt.Fprintln(r.w, "✅ The pod looks healthy: running, ready, no restarts. No problems detected.")
+			return nil
+		}
+		fmt.Fprintln(r.w, "No problems detected by the rule engine.")
+		if resp == nil {
+			fmt.Fprintln(r.w, "The pod shows signs of failing that no rule covers yet. Re-run with --explain for an LLM analysis.")
+		}
 		return nil
 	}
 

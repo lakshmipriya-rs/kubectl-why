@@ -31,12 +31,8 @@ func NewProvider(name, model string) (Provider, error) {
 			m = "llama3"
 		}
 		return NewOllama(m), nil
-	case "anthropic":
-		return NewAnthropic(model)
-	case "openai":
-		return NewOpenAI(model)
 	default:
-		return nil, fmt.Errorf("unknown provider %q; supported: ollama, anthropic, openai", name)
+		return nil, fmt.Errorf("unknown provider %q; supported: ollama", name)
 	}
 }
 

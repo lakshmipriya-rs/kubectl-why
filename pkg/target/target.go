@@ -51,7 +51,15 @@ type Target struct {
 	// PodsTotal and PodsUnhealthy are only set for workloads.
 	PodsTotal     int `json:"pods_total,omitempty"`
 	PodsUnhealthy int `json:"pods_unhealthy,omitempty"`
+	// PodUnhealthy says whether the chosen pod itself looks unhealthy
+	// (see IsUnhealthy). Set by the caller once the pod has been fetched.
+	PodUnhealthy bool `json:"pod_unhealthy"`
 }
+
+// IsUnhealthy reports whether a pod shows any sign of failing: a failed or
+// pending phase, a container waiting with an error reason, a non-zero exit,
+// failing readiness, or restarts.
+func IsUnhealthy(p corev1.Pod) bool { return unhealthiness(p) > 0 }
 
 // IsWorkload reports whether the user asked for a workload rather than a pod.
 func (t Target) IsWorkload() bool { return t.Kind != KindPod }

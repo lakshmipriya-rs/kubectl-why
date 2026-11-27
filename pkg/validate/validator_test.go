@@ -51,7 +51,7 @@ func TestFilterUnsupported_UncitedClaimWithNoFindings(t *testing.T) {
 func TestFilterUnsupported_EmptyResponse(t *testing.T) {
 	out := validate.FilterUnsupported(&llm.Response{}, findings)
 	if out.Confidence != "" {
-		t.Errorf("empty (--no-llm) response should stay empty, got confidence %q", out.Confidence)
+		t.Errorf("empty response (LLM call failed) should stay empty, got confidence %q", out.Confidence)
 	}
 	if validate.FilterUnsupported(nil, findings) == nil {
 		t.Error("nil response should become an empty response")

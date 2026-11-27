@@ -26,7 +26,7 @@ go build -o kubectl-why .
 # 3. Run all scenarios (rules-only, no LLM)
 go run ./eval/harness --scenarios ./eval/scenarios --binary ./kubectl-why
 
-# Run one scenario, or let kubectl-why use its LLM provider
+# Run one scenario, or also test the LLM analysis (--explain)
 go run ./eval/harness --binary ./kubectl-why --run 04
 go run ./eval/harness --binary ./kubectl-why --llm
 
@@ -53,7 +53,7 @@ All scenarios use only the official `busybox:1.36` image, apart from scenario 01
 | `--scenarios` | `eval/scenarios` | Scenarios directory |
 | `--binary` | `kubectl-why` | kubectl-why binary to test |
 | `--run` | _(all)_ | Only scenarios whose directory name contains this |
-| `--llm` | `false` | Don't pass `--no-llm` to kubectl-why |
+| `--llm` | `false` | Run kubectl-why with `--explain` (needs a local Ollama) |
 | `--timeout` | `3m` | Per-scenario wait for the failure state |
 
 ## Scenarios
