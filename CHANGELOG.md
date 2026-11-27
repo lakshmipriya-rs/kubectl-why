@@ -3,7 +3,9 @@
 All notable changes to kubectl-why are documented here.
 Versions follow [Semantic Versioning](https://semver.org/); while the version is 0.x, minor releases may contain breaking changes.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-27
+
+Use kubectl-why from Claude Desktop, Claude Code and other AI assistants through MCP.
 
 ### Added
 - `kubectl-why mcp`: a Model Context Protocol server for Claude Desktop, Claude Code and other MCP clients, with read-only tools `diagnose`, `list_unhealthy` and `get_events`. Results are redacted and marked as untrusted cluster data; `--allowed-namespaces` limits what can be read.
@@ -13,8 +15,12 @@ Versions follow [Semantic Versioning](https://semver.org/); while the version is
 - `-n/--namespace` and `--kubeconfig` are accepted by subcommands too.
 - Without `-n`, the namespace now comes from the current kubeconfig context (as with kubectl and `oc project`) instead of always `default`.
 
+### Fixed
+- CrashLoopBackOff was missed most of the time on newer Kubernetes (e.g. 1.35), which reports a crash-looping container as `terminated` (with restarts) for most of the back-off instead of `waiting: CrashLoopBackOff`. Both forms are now detected, using the restart policy to tell a crash loop from a container that finished, and the crashed run's logs are shown in either case.
+
 ### Internal
-- The diagnosis pipeline moved from the CLI into `pkg/diagnose`, so the CLI and the upcoming MCP server share it.
+- The diagnosis pipeline moved from the CLI into `pkg/diagnose`, so the CLI and the MCP server share it.
+- Eval harness: new `min_restarts` wait condition; the crash-loop scenario uses it so it is reliable on any Kubernetes version.
 
 ## [0.3.0] - 2026-11-27
 
@@ -51,4 +57,5 @@ First tagged release. kubectl-why diagnoses failing pods, workloads and Services
 ### Security
 - Least-privilege RBAC: no access to Secrets or ConfigMaps is needed. See the README for the minimal Role.
 
+[0.4.0]: https://github.com/lakshmipriya-rs/kubectl-why/releases/tag/v0.4.0
 [0.3.0]: https://github.com/lakshmipriya-rs/kubectl-why/releases/tag/v0.3.0

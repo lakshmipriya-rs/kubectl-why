@@ -93,11 +93,12 @@ Create `eval/scenarios/NN-name/` with:
     "container_waiting_reason": "ImagePullBackOff",
     "container_terminated_reason": "OOMKilled",
     "exit_code": 137,
-    "event_reason": "FailedScheduling"
+    "event_reason": "FailedScheduling",
+    "min_restarts": 2
   }
 }
 ```
 
-All `wait_for` fields are optional, but set at least one. Every field that is set must match. Container conditions match on any container or init container, including its previous (restarted) state. `pod_selector` is only needed when a scenario creates several pods. `target` is passed to kubectl-why instead of the failing pod's name, to test workload targets such as `deploy/web`.
+All `wait_for` fields are optional, but set at least one. Every field that is set must match. Container conditions match on any container or init container, including its previous (restarted) state. For crash loops, prefer `min_restarts` plus `exit_code` over `container_waiting_reason: CrashLoopBackOff`: newer Kubernetes versions (e.g. 1.35) report a crash-looping container as `terminated` for most of the back-off, so the waiting reason is only visible briefly. `pod_selector` is only needed when a scenario creates several pods. `target` is passed to kubectl-why instead of the failing pod's name, to test workload targets such as `deploy/web`.
 
 `go test ./eval/...` checks that every scenario's files are valid.

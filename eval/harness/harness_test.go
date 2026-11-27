@@ -45,7 +45,7 @@ const restartedPod = `{
   "status": {
     "phase": "Running",
     "containerStatuses": [
-      {"name": "app", "state": {"running": {}},
+      {"name": "app", "restartCount": 2, "state": {"running": {}},
        "lastState": {"terminated": {"reason": "Error", "exitCode": 137}}}
     ]
   }
@@ -65,6 +65,8 @@ func TestMatchesPodState(t *testing.T) {
 		{"wrong phase", WaitSpec{PodPhase: "Running", ContainerWaitingReason: "ImagePullBackOff"}, pullPod, false},
 		{"waiting reason absent", WaitSpec{ContainerWaitingReason: "CrashLoopBackOff"}, pullPod, false},
 		{"lastState termination counts", WaitSpec{ContainerTerminatedReason: "Error", ExitCode: 137}, restartedPod, true},
+		{"min restarts met", WaitSpec{MinRestarts: 2, ExitCode: 137}, restartedPod, true},
+		{"min restarts not met", WaitSpec{MinRestarts: 3}, restartedPod, false},
 		// Regression: an empty WaitSpec used to make the old harness match any pod.
 		// It still matches (nothing to check), which is why each scenario now
 		// runs in its own namespace.
