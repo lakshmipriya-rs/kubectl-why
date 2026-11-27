@@ -20,6 +20,7 @@ var registry = []RuleFunc{
 	CheckCrashLoopBackOff,
 	CheckOOMKilled,
 	CheckSIGKILL,
+	CheckProbeFailure,
 	CheckFailedScheduling,
 }
 

@@ -1,0 +1,17 @@
+{
+  "scenario": "06-readiness-404",
+  "description": "Readiness probe requests a path that doesn't exist (HTTP 404); pod runs but is never Ready",
+  "expected_category": "ProbeFailure",
+  "fix_keywords": ["404", "/healthz", "readinessProbe", "no traffic"],
+  "must_not_hallucinate": [
+    "CrashLoopBackOff",
+    "OOMKilled",
+    "SIGKILL",
+    "ImagePullBackOff"
+  ],
+  "target": "deploy/web",
+  "wait_for": {
+    "pod_phase": "Running",
+    "event_reason": "Unhealthy"
+  }
+}
