@@ -3,6 +3,14 @@
 All notable changes to kubectl-why are documented here.
 Versions follow [Semantic Versioning](https://semver.org/); while the version is 0.x, minor releases may contain breaking changes.
 
+## [Unreleased]
+
+### Changed
+- Without `-n`, the namespace now comes from the current kubeconfig context (as with kubectl and `oc project`) instead of always `default`.
+
+### Internal
+- The diagnosis pipeline moved from the CLI into `pkg/diagnose`, so the CLI and the upcoming MCP server share it.
+
 ## [0.3.0] - 2026-11-27
 
 First tagged release. kubectl-why diagnoses failing pods, workloads and Services and prints a root-cause report in which every finding cites the exact fields and events it is based on. It runs fully offline by default.

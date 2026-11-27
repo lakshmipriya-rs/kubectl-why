@@ -90,7 +90,7 @@ Supported targets: a pod name, or `<kind>/<name>` with kind `pod`, `deploy`, `st
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-n, --namespace` | `default` | Kubernetes namespace |
+| `-n, --namespace` | _(context's namespace)_ | Kubernetes namespace; like kubectl, defaults to the current context's namespace (e.g. set by `oc project`) |
 | `--explain` | `false` | Also ask an LLM for an analysis citing the rule evidence |
 | `--dry-run` | `false` | Print the redacted payload `--explain` would send, and exit |
 | `--provider` | `ollama` | LLM provider for `--explain` (currently `ollama`) |

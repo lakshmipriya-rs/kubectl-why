@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/lakshmipriya-rs/kubectl-why/pkg/collect"
+	"github.com/lakshmipriya-rs/kubectl-why/pkg/diagnose"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/llm"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/redact"
 	"github.com/lakshmipriya-rs/kubectl-why/pkg/report"
@@ -75,7 +75,7 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&f.namespace, "namespace", "n", "default", "Kubernetes namespace")
+	rootCmd.Flags().StringVarP(&f.namespace, "namespace", "n", "", "Kubernetes namespace (default: the kubeconfig context's namespace)")
 	rootCmd.Flags().BoolVar(&f.explain, "explain", false, "Also ask an LLM for an analysis that cites the rule evidence (sends redacted data to the provider)")
 	rootCmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print the redacted payload that --explain would send, and exit")
 	rootCmd.Flags().StringVar(&f.provider, "provider", "ollama", "LLM provider for --explain: ollama")
@@ -93,66 +93,21 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// ── Build Kubernetes client ───────────────────────────────────────────────
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if f.kubeconfig != "" {
-		loadingRules.ExplicitPath = f.kubeconfig
-	}
-	configOverrides := &clientcmd.ConfigOverrides{}
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	restCfg, err := kubeConfig.ClientConfig()
-	if err != nil {
-		return fmt.Errorf("building kubeconfig: %w", err)
-	}
-	client, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		return fmt.Errorf("creating kubernetes client: %w", err)
-	}
-
-	// ── Resolve target (pod, or a workload's unhealthiest pod) ────────────────
-	tgt, err := target.Resolve(ctx, client, f.namespace, args[0])
+	client, namespace, err := newClient(f.kubeconfig, f.namespace)
 	if err != nil {
 		return err
 	}
 
-	// ── Collect + rules ───────────────────────────────────────────────────────
-	collector := collect.New(client)
-	var findings []rules.Finding
-
-	// A Service gets its own checks (selector, endpoints, ports) first.
-	if tgt.Kind == target.KindService {
-		sf, err := collector.CollectService(ctx, tgt.Name, f.namespace)
-		if err != nil {
-			return fmt.Errorf("collecting service facts: %w", err)
-		}
-		findings = append(findings, rules.RunServiceRules(sf)...)
+	// ── Diagnose (resolve target, collect facts, run rules) ───────────────────
+	res, err := diagnose.Run(ctx, client, namespace, args[0])
+	if err != nil {
+		return err
 	}
-	// A Deployment gets rollout checks (pod creation failures, stuck rollouts).
-	if tgt.Kind == target.KindDeployment {
-		df, err := collector.CollectDeployment(ctx, tgt.Name, f.namespace)
-		if err != nil {
-			return fmt.Errorf("collecting deployment facts: %w", err)
-		}
-		findings = append(findings, rules.RunDeploymentRules(df)...)
-	}
+	tgt, findings := res.Target, res.Findings
 
-	// Then the pod (for a Service: its unhealthiest selected pod, if any).
-	var facts *collect.PodFacts
-	if tgt.Pod != "" {
-		facts, err = collector.Collect(ctx, tgt.Pod, f.namespace)
-		if err != nil {
-			return fmt.Errorf("collecting pod facts: %w", err)
-		}
-		tgt.PodUnhealthy = target.IsUnhealthy(*facts.Pod)
-		findings = append(findings, rules.RunAll(facts)...)
-	}
-	rules.AssignEvidenceIDs(findings) // one E1…En sequence across Service and pod findings
-
-	// ── Redact ────────────────────────────────────────────────────────────────
 	// Everything that can leave the machine (dry-run payload, LLM prompt) uses
 	// the redacted copies. The local report below still shows raw findings.
-	redacted := redact.Redact(facts)
-	redactedFindings := redact.Findings(findings)
+	redacted, redactedFindings := res.Redacted()
 
 	// ── Dry-run: print payload and stop ───────────────────────────────────────
 	if f.dryRun {
@@ -189,4 +144,29 @@ func run(cmd *cobra.Command, args []string) error {
 	// ── Report ────────────────────────────────────────────────────────────────
 	r := report.New(os.Stdout)
 	return r.Print(report.Result{Target: &tgt, Findings: findings, LLM: resp}, f.output)
+}
+
+// newClient builds a Kubernetes client from the kubeconfig (or the explicit
+// path) and returns the namespace to use: the given one, or else the current
+// context's namespace, like kubectl (and `oc project`) does.
+func newClient(kubeconfig, namespace string) (kubernetes.Interface, string, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
+	cfg := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
+	restCfg, err := cfg.ClientConfig()
+	if err != nil {
+		return nil, "", fmt.Errorf("building kubeconfig: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, "", fmt.Errorf("creating kubernetes client: %w", err)
+	}
+	if namespace == "" {
+		if namespace, _, err = cfg.Namespace(); err != nil || namespace == "" {
+			namespace = "default"
+		}
+	}
+	return client, namespace, nil
 }
